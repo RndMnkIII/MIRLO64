@@ -246,8 +246,14 @@ module core_top (
   //
   // The Analogizer's adapter takes the port instead (docs/analogizer.md) when `an_own` says so (the runtime's decision, at the core's start: a
   // Game Boy cartridge's header is there or it is not); banks 1-3 are then the video DAC's, driven by rtl/analogizer/an_out.sv, with the
-  // DAC's clock on bank 1's bit 5. Bank 0 and the pins 30 and 31 stay as they are (high, the SNAC port's idle).
+  // DAC's clock on bank 1's bit 5. Bank 0 and the pins 30 and 31 stay as they are (high, the SNAC port's idle) unless a SNAC pad is
+  // chosen in the menu (rtl/analogizer/an_snac.sv): then the SNAC's own pins are the pad's -- bank 1's bits 7:6 (OUT2, OUT1: latch and
+  // clock, spare for the video's DAC) and pin 30 (IO5: the clock of port 2) outputs, bank 0's bits 5:4 (IN7, IO3: the data) and pin 31
+  // (IO6) inputs -- and the DAC's pins go on as they were (bank 1 is then an output also when the video is off: its low bits 0).
   wire        an_own;
+  wire  [2:0] snac_kind;
+  wire        snac_drive, snac_clk, snac_lat;
+  wire [15:0] snac_key1, snac_key2;
   wire [2:0]  an_mode;
   wire [1:0]  an_scan;
   wire [7:0]  an_bank3, an_bank2;
@@ -265,14 +271,20 @@ module core_top (
   assign cart_tran_bank3_dir     = an_own ? an_en : gb_a_dir;
   assign cart_tran_bank2         = an_own ? (an_en ? an_bank2 : 8'hzz) : gb_a_oe ? gb_a[15:8] : 8'hzz;
   assign cart_tran_bank2_dir     = an_own ? an_en : gb_a_dir;
-  assign cart_tran_bank1         = an_own ? (an_en ? {2'b00, clk_vid_90deg, an_bank1_b} : 8'hzz) : gb_d_oe ? gb_d_o : 8'hzz;
-  assign cart_tran_bank1_dir     = an_own ? an_en : gb_d_dir;
-  assign cart_tran_bank0         = {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
-  assign cart_tran_bank0_dir     = 1'b1;
-  assign cart_tran_pin30         = 1'b0;
-  assign cart_tran_pin30_dir     = gb_on ? 1'b0 : 1'bz;   // (off: as the template leaves it)
-  assign cart_pin30_pwroff_reset = an_own ? an_en : gb_on;
-  assign cart_tran_pin31         = 1'bz;
+  // bank 1: bits 7:6 the SNAC's latch and clock (the pad's outputs), bit 5 the DAC's clock, bits 4:0 the picture's B5..B1
+  wire        bank1_out = an_en || snac_drive;
+  assign cart_tran_bank1         = an_own ? (bank1_out ? {snac_drive ? {snac_lat, snac_clk} : 2'b00, an_en ? clk_vid_90deg : 1'b0,
+                                                          an_en ? an_bank1_b : 5'd0} : 8'hzz)
+                                          : gb_d_oe ? gb_d_o : 8'hzz;
+  assign cart_tran_bank1_dir     = an_own ? bank1_out : gb_d_dir;
+  // bank 0: the cartridge's PHI, /WR, /RD and /CS (idle high: the Analogizer's SNAC port at rest), or the SNAC pad's data, inputs
+  assign cart_tran_bank0         = snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
+  assign cart_tran_bank0_dir     = !snac_drive;
+  // pin 30: the SNAC pad's second clock (a copy of the first), else as the template leaves it
+  assign cart_tran_pin30         = snac_drive ? snac_clk : 1'b0;
+  assign cart_tran_pin30_dir     = snac_drive ? 1'b1 : gb_on ? 1'b0 : 1'bz;   // (off: as the template leaves it)
+  assign cart_pin30_pwroff_reset = an_own ? bank1_out : gb_on;
+  assign cart_tran_pin31         = 1'bz;                   // (the SNAC pad's IO6, an input)
   assign cart_tran_pin31_dir     = 1'b0;
 
   // link port is input only
@@ -1069,7 +1081,7 @@ module core_top (
       .vga_de(de),
       .vga_skip(skip),
       .vga_woven(an_vid_woven_s),
-      .an_mode(an_mode), .an_scan(an_scan), .an_own(an_own),
+      .an_mode(an_mode), .an_scan(an_scan), .an_own(an_own), .snac_kind(snac_kind), .snac_key1(snac_key1), .snac_key2(snac_key2),
 
       .use_jtag(use_jtag_s),
 
@@ -1253,6 +1265,16 @@ module core_top (
       .outclk_5(clk_cpu),
 
       .locked(pll_core_locked)
+  );
+
+  ////////////////////////////////////////////////////////////////////////////////////////
+  // SNAC pad (Analogizer)
+
+  // The SNAC pad (DB15, NES, SNES; one or two players): its keys go to the SoC, which ORs them into the Pocket's pad 1 and 2
+  an_snac #(.CLK_HZ(62_500_000)) snac (
+      .clk(clk_sys), .own(an_own), .kind(snac_kind),
+      .dat1(cart_tran_bank0[4]), .dat1b(cart_tran_pin31), .dat2(cart_tran_bank0[5]),
+      .clk_o(snac_clk), .lat_o(snac_lat), .drive(snac_drive), .key1(snac_key1), .key2(snac_key2)
   );
 
 endmodule

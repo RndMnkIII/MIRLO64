@@ -25,8 +25,8 @@
  *                        (the stick stays centred); any other value is the D-pad
  *          [21:20]  n=12 "Restart Game": the action's value (1) when it is chosen, cleared by the runtime (n64rt_restart.c); not a setting
  *          [23:22]  n=13 "D-pad": 0 none, 1 the D-pad, 2 the left analog stick, 3 the right analog stick
- *          [24]     n=14 free (was "Show FPS", which nothing ever read)
- *          [25]     n=15 free (was "Start = Select+Start")
+ *          [25:24]  n=14 "Exp. Pak / Gameshark", a list of four: [24] the Pak out (loader/main.c), [25] the GameShark codes on (n64rt_cheat.c)
+ *          [25]     n=15 the codes on, as n=14 writes it too (no variable of interact.json has this address now)
  *
  * A button setting (Z, L, R, Modifier) is a code, 0 the setting's own default (so that the word's reset value, 0, is the
  * default layout before the Pocket has written anything): 1 the Pocket's L, 2 R, 3 ZL (L2), 4 ZR (R2), 5 none, 6 A, 7 B, 8 X,

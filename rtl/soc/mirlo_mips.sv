@@ -113,6 +113,9 @@ module mirlo_mips #(
     output wire    [2:0] an_mode,       // the Analogizer's settings (docs/analogizer.md): the video, the scanlines
     output wire    [1:0] an_scan,
     output wire          an_own,        // the adapter owns the cartridge port
+    output wire    [2:0] snac_kind,      // the SNAC pad: [1:0] 0 off, 1 DB15, 2 NES, 3 SNES; [2] a second player (rtl/analogizer/an_snac.sv)
+    input  wire   [15:0] snac_key1,     // its keys, the Pocket's bits, ORed into the controllers 1 and 2 (mirlo_regs.sv)
+    input  wire   [15:0] snac_key2,
     output logic   [7:0] vga_g,
     output logic         vga_hsync,
     output logic   [7:0] vga_r,
@@ -429,7 +432,7 @@ mirlo_regs regs (.clk, .rst,
     .ss_save_t(apf_ss_save_t), .ss_load_t(apf_ss_load_t), .ss_done_t(apf_ss_done_t), .ss_err(apf_ss_err), .ss_sup(apf_ss_sup),
     .pad_clk(apf_pad_clk), .pad_we(apf_pad_we), .pad_wa(apf_pad_wa), .pad_wd(apf_pad_wd),
     .ia_address(apf_interact_address), .ia_data(apf_interact_data), .ia_wr(apf_interact_wr), .ia_q(apf_interact_q),
-    .ia_an_mode(an_mode), .ia_an_scan(an_scan), .ia_an_own(an_own),
+    .ia_an_mode(an_mode), .ia_an_scan(an_scan), .ia_an_own(an_own), .ia_an_snac(snac_kind), .snac_key1, .snac_key2,
     .ia_crop_v(vid_crop_v), .ia_crop_r(vid_crop_r), .ia_crop_l(vid_crop_l),
     .vblank, .fb_base(fb_base_csr), .fb_width, .fb_y0, .fb_rows, .fb_px0, .fb_pw, .fb_xs, .fb_ys, .fb_nw, .fb_tall, .fb_gamma, .fb_pal, .tv_pal, .fb_dma_enable, .fb_vtg_enable, .fb_mode,
     .bus_errors, .geom_irq, .game_irq, .geom_run, .dbg_geom_msg,

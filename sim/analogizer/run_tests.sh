@@ -5,6 +5,9 @@
 #   an_out    each mode's pin map, blanking and sync pins, on the scan-out's timing
 #   an_yc     colour bars: luma, chroma amplitude and phase against the burst, the burst's position and length, the PAL
 #             line alternation, sync, in NTSC and PAL
+#   an_snac   (rtl/analogizer/an_snac.sv) every SNAC pad (DB15, NES, SNES; one and two players; the DB15 data on IO3 or IO6) against models of
+#             the pads' shift registers: the keys of many button sets, the latch and the clock (width, period, edges), the pins'
+#             owner, a change of pad in mid-poll, and that a key word is always one poll's
 #   ./run_tests.sh            (builds into $OBJ, default /tmp/an_sim_$USER)
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"; R="$(cd "$HERE/../.." && pwd)"; A="$R/rtl/analogizer"
@@ -40,5 +43,8 @@ rm -f "$OBJ/yc.bin"
 # --- an_out: the pin map of each mode on the scan-out's timing
 build out an_out "$A/an_out.sv $A/an_yc.sv $A/an_ypbpr.sv $A/an_csync.sv $A/an_scandbl.sv" "$HERE/an_out/tb.cpp" --prefix Van_out
 "$OBJ/out/tb" | tail -1 | grep -q "ALL PASS" || { "$OBJ/out/tb"; rc=1; }
+# --- an_snac: the SNAC pads
+build snac an_snac "$A/an_snac.sv" "$HERE/an_snac/tb.cpp" --prefix Van_snac
+"$OBJ/snac/tb" | tail -1 | grep -q "ALL PASS" || { "$OBJ/snac/tb"; rc=1; }
 [ $rc = 0 ] && echo "ALL PASS" || echo "SOME FAILED"
 exit $rc

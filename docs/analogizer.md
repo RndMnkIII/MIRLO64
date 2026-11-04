@@ -35,7 +35,9 @@ and `VS pin` are the sync outputs; what each mode puts on them:
 
 `/BLANK` is active low; in the RGB modes the colour is also forced to 0 in the
 blanking. Bank 0 (bits 7:4) and pins 30 and 31 belong to the SNAC controller
-port and are not used by the video; bank 0 is driven high.
+port and are not used by the video; bank 0 is driven high unless a SNAC pad is
+chosen ([SNAC controllers](#snac-controllers)). The two spare bits of bank 1 (7 and 6) are
+the SNAC port's latch and clock outputs.
 
 ## What the scan-out sends
 
@@ -67,12 +69,13 @@ and passes a woven frame as it is.
 - `an_scandbl`: the line doubler for RGBHV: 240p lines written once and read twice at the 25 MHz pixel rate (31.6 kHz,
   528 lines), the scanlines option dimming the second copy; a woven frame goes through as it is. The line buffer keeps
   six bits a channel, which is all the DAC takes.
+- `an_snac`: the SNAC pad reader (below); it runs on the SoC's clock, not the video's.
 - `an_out`: the mode multiplexer and the pin map above; everything registered on `clk_vid`. The colours of RGBS and RGsB
   go through `an_scandbl`'s pass-through (as the RGBHV woven frame does), a clock behind the scan-out's, so that one
   colour path serves the three RGB modes.
 
 Tests: `sim/analogizer/run_tests.sh` (Verilator, against floating-point models in Python; `an_out` checks the pin map of
-every mode on the scan-out's timing) and `sim/analogizer/scandbl/run_tests.sh`.
+every mode on the scan-out's timing; `an_snac` is read against models of the pads' shift registers) and `sim/analogizer/scandbl/run_tests.sh`.
 
 ### Resources
 
@@ -107,14 +110,53 @@ probe puts addresses and /RD on the pins the adapter reads as video for a few
 milliseconds, once, at the core's start; the slot is not hot-pluggable, so
 that is the only time it is looked at.
 
+## SNAC controllers
+
+A DB15, NES or SNES pad on the adapter's SNAC port (its USB 3 connector) plays as an N64 controller. `rtl/analogizer/an_snac.sv`
+polls the pad and gives its buttons as the Pocket's key bits, which `rtl/soc/mirlo_regs.sv` ORs into `CONT1_KEY` (and, with a second player,
+`CONT2_KEY`); the runtime then sees one more source of the same keys, and the "Stick", "C buttons", "Z button" ... settings apply to it as to the
+Pocket's own buttons. The Pocket's buttons and the dock's pads go on working at the same time. The SNAC port belongs to the adapter only
+when it owns the cartridge port ("Who owns the port", below): with a Game Boy cartridge in the slot the setting is ignored.
+
+The pins (the adapter's configuration A: its A/B switch on A):
+
+| signal | cartridge port pin | direction | NES, SNES | DB15 |
+|---|---|---|---|---|
+| OUT1 | `cart_tran_bank1[6]` | out | clock, both ports | clock |
+| OUT2 | `cart_tran_bank1[7]` | out | latch (active high) | latch (active low) |
+| IO5 | `cart_tran_pin30` | out | clock of port 2, a copy of OUT1 | - |
+| IO3 | `cart_tran_bank0[4]` | in | data, player 1 | data of the chain (both players) |
+| IO6 | `cart_tran_pin31` | in | - | the same data, for a cable that crosses TX and RX |
+| IN7 | `cart_tran_bank0[5]` | in | data, player 2 | - |
+
+With a pad chosen bank 0 is an input (`cart_tran_bank0_dir` low) and bank 1 an output, also when the video is off (its bits 5:0 are then 0).
+The pads send a pressed button as 0. A poll is a latch pulse and a clock pulse for each further bit, and goes on all the time: the NES's and the SNES's clock
+is 50 kHz (a console's is 83 kHz), a poll of 180 us (NES, 8 bits) or 260 us (SNES, 12 bits: the four after them are not read), and the DB15's 200 kHz, 125 us
+for its 24 bits. The waveforms are in the header of `an_snac.sv` and are measured by its bench.
+
+The buttons go to the Pocket's keys by where they sit (the SNES's diamond is the Pocket's):
+
+| pad | buttons |
+|---|---|
+| SNES | D-pad, A, B, X, Y, L (the Pocket's L1), R (R1), Select, Start |
+| NES | D-pad, A, B, Select, Start |
+| DB15 | D-pad, A, B, C (X), D (Y), E (L1), F (R1), Select, Start; player 2's the same, from the second half of the chain |
+
+The second player (`NES 2P`, `SNES 2P`, `DB15 2P`) is controller 2: the second port of a NES or SNES adapter, the second half of a DB15's chain. A controller
+2 the dock does not report is told to the runtime as a dock pad without analog (`KEY_TYPE` 2), because the runtime takes a pad with type 0 for no controller
+(`pad_there` in `lang/n64rt/n64rt_io.c`); the choice is the only thing that says a second pad is there, so with `NES`, `SNES` or `DB15` alone the N64 sees one.
+
 ## Settings
 
-One entry in the core's menu: "Analogizer video": Off, RGBS, RGsB, YPbPr, Y/C NTSC,
+Two entries in the core's menu: "Analogizer controller": Off, DB15, NES, SNES, DB15 2P, NES 2P, SNES 2P
+(`INTERACT2[9:5]`: bits 1:0 the pad, bit 2 the second player; the value 4 is off); and "Analogizer video": Off, RGBS, RGsB, YPbPr, Y/C NTSC,
 Y/C PAL, RGBHV, and RGBHV with scanlines 25 %, 50 %, 75 % (the scanlines dim the odd lines, which only the doubled
 RGBHV picture has). The Pocket's own picture stays on.
 
 The Pocket's menu has two limits, both measured on a Pocket: it shows only 14 of the core's entries (a 15th loads without
 an error and is silently left out, so "Restart Game" has to stay the 14th, the last), and it refuses an `interact.json`
 whose lists have more than about 75 options in all ("Load error in 'interact'": 75 loads, 77 does not, 76 untried). The
-core's menu has 14 entries and 59 options: the two sticks share one "Stick dead zone" (steps of 10 %, 0 to 70 %) to make
-room for the video entry.
+core's menu has 14 entries and 70 options: the two sticks share one "Stick dead zone" (steps of 10 %, 0 to 70 %) to make
+room for the video entry, and the Expansion Pak and the GameShark codes, two checks, are one list of four ("Exp. Pak / Gameshark":
+`INTERACT1[25:24]`, bit 24 the Pak out, bit 25 the codes on) to make room for the controller entry. 70 is five below the
+75 that loads: the next entry that needs options has to come out of one of these.

@@ -15,7 +15,7 @@ It is written from scratch in SystemVerilog for the Pocket's Cyclone V FPGA and 
 * **Memory**: 8 MiB of RAM, as a console with the Expansion Pak, or 4 MiB with the Pak taken out in the core's settings.
 * **Controllers**: up to four through the Dock, controls are customizable.
 * **Sleep and Memories**: the Pocket's Sleep and its Memories (save states), with every accessory.
-* **Analogizer**: with an Analogizer in the Pocket's cartridge slot, the picture also goes out as RGBS, RGsB, YPbPr, Y/C (NTSC or PAL) or RGBHV, with optional scanlines; the core finds out by itself whether the slot holds the adapter or a Game Boy cartridge ([docs/analogizer.md](docs/analogizer.md)).
+* **Analogizer**: with an Analogizer in the Pocket's cartridge slot, the picture also goes out as RGBS, RGsB, YPbPr, Y/C (NTSC or PAL) or RGBHV, with optional scanlines, and a DB15, NES or SNES pad (one or two players) on its SNAC port plays as a controller; the core finds out by itself whether the slot holds the adapter or a Game Boy cartridge ([docs/analogizer.md](docs/analogizer.md)).
 * **Accessories and saves**: Controller Pak, Transfer Pak cartridge compatible with physical GB cartridges in the Pocket GB slot, a Transfer Pak SD that runs a Game Boy ROM and its save from the SD card, and EEPROM, SRAM and FlashRAM saves.
 
 A small runtime, `n64rt.sys`, loads the game and plays the console's part around it: the PIF, the cartridge, the RCP registers that are not a block of the hardware, the video and audio events, the saves and the save states. It emulates no instruction of the CPU. The game runs with its own code, unmodified. No game is included, and games must be in `.z64` format (see [The games' format](#the-games-format)).
@@ -64,10 +64,9 @@ The core's own menu on the Pocket. The default of each is in bold.
 |---|---|---|
 | Crop Vertical | None, **8 lines**, 12 lines | Blanks that many lines at the top and the bottom of the picture |
 | Crop Right | None, **1 column** | Blanks the picture's last column |
-| Expansion Pak | **On**, off | With it the console has 8 MiB of RAM, without it 4 MiB; takes effect when the game is started again (Restart Game does it) |
+| Exp. Pak / Gameshark | **Pak in, codes off**, Pak out, codes off, Pak in, codes on, Pak out, codes on | Two settings in one list (the Pocket's menu has room for 14 entries): the Expansion Pak, and the GameShark codes. With the Pak in the console has 8 MiB of RAM, with it out 4 MiB; takes effect when the game is started again (Restart Game does it). With the codes on the core runs the game's GameShark codes, if it has a file in `Assets/n64/common/gameshark/` ([GameShark codes](#gameshark-codes)) |
 | Controller 1 pak | **None**, Controller Pak, Transfer Pak cartridge, Transfer Pak SD | The accessory in controller 1. Transfer Pak cartridge is the Transfer Pak with a Game Boy cartridge in the Pocket's slot. **Transfer Pak SD** plays a Game Boy game from the SD card, and needs two steps before the N64 game starts: choose it here, and load the Game Boy game with "Load Transfer Pak 1" (one of the core's Load entries, with "Load Game": a `.gb` or `.gbc`), in either order. The core does not choose the pak for you: with None, Controller Pak or Transfer Pak cartridge a loaded Game Boy game is ignored. It uses that game's own save, `<Game Boy game>.sav` in the Saves folder of the game's platform (`Saves/gbc/common/` for a game in `Assets/gbc/common/`), the file a Game Boy core keeps too (see [Saves](#saves)). Sleep and Memories work with it (its RAM is in the state); the Transfer Pak with a cartridge in the Pocket's slot is unplugged in them, and the game finds it gone when it wakes |
 | Controller 2 pak | **None**, Transfer Pak SD | A second Transfer Pak SD, in controller 2 (a pad that is there, with nothing pressed, when the dock has none), chosen and loaded in the same two steps: its Game Boy game is "Load Transfer Pak 2", and the same for its save; with no game loaded there the pak has no cartridge, as pak 1 has none with no game loaded. Set it before the game starts, as a game looks for its controllers then |
-| Enable Gameshark codes | **Off**, on | Runs the game's GameShark codes, if it has a file in `Assets/n64/common/gameshark/` ([GameShark codes](#gameshark-codes)) |
 | Stick | None, **D-pad**, L stick, R stick | What moves the N64's analog stick |
 | Stick dead zone | 0 %, **10 %**, 20 % ... 70 % | How far a stick has to move before the N64 sees it, for both sticks |
 | D-pad | **None**, D-pad, L stick, R stick | What moves the N64's D-pad |
@@ -78,6 +77,7 @@ The core's own menu on the Pocket. The default of each is in bold.
 | Start button | None, **Start**, Select+Start | The Pocket's button for Start; the Start key it leaves (alone with Select+Start, or with None) is C-up |
 | Modifier | **None**, L, R, ZL, ZR | Held, it turns the face buttons into the four C buttons and it makes the D-pad presses half a joystick press |
 | Analogizer video | **Off**, RGBS, RGsB, YPbPr, Y/C NTSC, Y/C PAL, RGBHV, RGBHV with scanlines 25 %, 50 %, 75 % | The analog picture on an Analogizer in the cartridge slot ([docs/analogizer.md](docs/analogizer.md)); the Pocket's own screen stays on |
+| Analogizer controller | **Off**, DB15, NES, SNES, DB15 2P, NES 2P, SNES 2P | A DB15, NES or SNES pad on the Analogizer's SNAC port, as a controller besides the Pocket's own: the player 1 pad's buttons are controller 1's, and with a 2P choice the player 2 pad is controller 2 ([docs/analogizer.md](docs/analogizer.md)) |
 | Restart Game | (an action) | Starts the game over, as a console switched off and on, with everything the Pocket loaded as it is (the ROM, the saves, the Transfer Paks' Game Boy games). It is the last entry. For a game that looks at its Transfer Pak only when it starts: load the Game Boy game with Load Transfer Pak 1 (or 2) while the N64 game runs, then choose Restart Game. A game that looks at its pak again at its menus needs no restart. Nothing restarts by itself ([Restart Game](docs/mips.md#restart-game)) |
 
 ### Saves
@@ -93,7 +93,7 @@ The Transfer Pak SD's save is the Game Boy game's own: the file `<Game Boy game>
 
 ### GameShark codes
 
-With "Enable Gameshark codes" on, the core looks in `Assets/n64/common/gameshark/` for a text file named after the game, `<ID>.txt`, where `<ID>`
+With the codes on in "Exp. Pak / Gameshark", the core looks in `Assets/n64/common/gameshark/` for a text file named after the game, `<ID>.txt`, where `<ID>`
 is the four characters of the ROM's header that say its game and its region (for example `NSME`), and runs every code in it, in every video
 field, as a GameShark does. `<ID>.<version>.txt` (the header's version byte, in decimal) is used first, for a revision whose codes differ. There is no
 choosing among the codes: put in the file the ones to run. A code is a line of `80123456 0063`, with anything after it as its description; the

@@ -68,6 +68,8 @@ module mirlo_regs (
     output wire  [2:0]  ia_an_mode,         // interact: the Analogizer's video (field 16: 0 off, 1 RGBS, 2 RGsB, 3 YPbPr, 4 Y/C NTSC, 5 Y/C PAL, 6 RGBHV,
     output wire  [1:0]  ia_an_scan,         //   7..9 RGBHV with the odd lines 25, 50, 75 % darker: mode 6, scan 1..3), and INTERACT2's bit 31, which the
     output wire         ia_an_own,          //   runtime sets: the adapter owns the port (docs/analogizer.md)
+    output wire  [2:0]  ia_an_snac,         // interact: the Analogizer's SNAC pad (field 17, INTERACT2[9:5]): [1:0] 0 off, 1 DB15, 2 NES, 3 SNES; [2] a second player
+    input  wire  [15:0] snac_key1, snac_key2,   // the SNAC pad's keys (rtl/analogizer/an_snac.sv), in the Pocket's key bits: ORed into CONT1_KEY and CONT2_KEY
     output wire  [4:0]  ia_crop_v,          // interact: "Crop Vertical" (lines; field 3) and "Crop Right" (pixels; field 5)
     output wire  [1:0]  ia_crop_r,          // ("Crop Horizontal", field 5: [1:0] columns at the right, [3:2] at the left)
     output wire  [1:0]  ia_crop_l,
@@ -234,6 +236,7 @@ wire       ia_an_dark  = ia_an_video >= 4'd7;
 assign ia_an_mode = ia_an_dark ? 3'd6 : ia_an_video[2:0];
 assign ia_an_scan = ia_an_dark ? 2'(ia_an_video - 4'd6) : 2'd0;
 assign ia_an_own  = ia2[31];
+assign ia_an_snac = ia2[7:5];
 always_ff @(posedge clk) begin
     if (rst) begin ia0 <= 0; ia1 <= 0; ia2 <= 0; ia_ch0 <= 0; ia_ch1 <= 0; end
     else begin
@@ -257,7 +260,7 @@ always_ff @(posedge clk) begin
             5'd11: ia1[19:15] <= ia_data[4:0];
             5'd12: ia1[21:20] <= ia_data[1:0];
             5'd13: ia1[23:22] <= ia_data[1:0];
-            5'd14: ia1[24]    <= ia_data[0];
+            5'd14: ia1[25:24] <= ia_data[1:0];      // "Expansion Pak and Gameshark codes": [24] the Pak out, [25] the codes on (one list)
             5'd15: ia1[25]    <= ia_data[0];
             5'd16: ia2[4:0]   <= ia_data[4:0];
             5'd17: ia2[9:5]   <= ia_data[4:0];
@@ -281,7 +284,7 @@ always_ff @(posedge clk) begin
     5'd11: ia_q <= {27'd0, ia1[19:15]};
     5'd12: ia_q <= {30'd0, ia1[21:20]};
     5'd13: ia_q <= {30'd0, ia1[23:22]};
-    5'd14: ia_q <= {31'd0, ia1[24]};
+    5'd14: ia_q <= {30'd0, ia1[25:24]};
     5'd15: ia_q <= {31'd0, ia1[25]};
     5'd16: ia_q <= {27'd0, ia2[4:0]};
     5'd17: ia_q <= {27'd0, ia2[9:5]};
@@ -459,7 +462,15 @@ end
 logic [31:0] pad_q;
 initial for (int k = 0; k < 16; k++) pad_ram[k] = 32'd0;
 always_ff @(posedge pad_clk) if (pad_we) pad_ram[pad_wa] <= pad_wd;
-always_ff @(posedge clk) pad_q <= pad_ram[a[5:2]];
+logic [3:0]  pad_ix;
+always_ff @(posedge clk) begin pad_q <= pad_ram[a[5:2]]; pad_ix <= a[5:2]; end
+// The Analogizer's SNAC pad (rtl/analogizer/an_snac.sv) is a pad as the Pocket's own: its keys are ORed into CONT1_KEY's and, with a
+// second player chosen, CONT2_KEY's (the keys' bits only: the type and the sticks stay the dock's). A pad 2 the dock does not report
+// (KEY_TYPE 0, which the runtime takes as no controller) is, with a second player chosen, a dock pad without analog (type 2).
+wire snac_p2 = ia2[31] && ia2[7] && ia2[6:5] != 2'd0;
+wire [31:0] pad_ov = pad_ix == 4'd0 ? {pad_q[31:16], pad_q[15:0] | snac_key1}
+                   : pad_ix == 4'd1 ? {(snac_p2 && pad_q[31:28] == 4'd0) ? 4'd2 : pad_q[31:28], pad_q[27:16], pad_q[15:0] | snac_key2}
+                   : pad_q;
 // The rest: the map's banks are a[11:8], a register's word in its bank a[5:2] (a[15:12] and a[7:6] are 0 for every register).
 // An address that names no register reads 0.
 logic [31:0] rb [16];
@@ -478,7 +489,7 @@ always_comb begin
     R_APF_BRIDGE_SAVESTATE[5:2]:           rb[1] = {29'd0, ss_load, ss_save, ss_sup};
     default: ;
     endcase
-    rb[2] = pad_q;                                              // APF_INPUT: KEY1..4, JOY1..4, TRIG1..4 (words 12..15 are never written: 0)
+    rb[2] = pad_ov;                                             // APF_INPUT: KEY1..4, JOY1..4, TRIG1..4 (words 12..15 are never written: 0)
     case (a[5:2])                                               // APF_INTERACT
     R_APF_INTERACT_INTERACT0[5:2]:         rb[3] = ia0;
     R_APF_INTERACT_INTERACT_CHANGED0[5:2]: rb[3] = {31'd0, ia_ch0};

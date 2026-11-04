@@ -99,6 +99,10 @@ interrupt; the runtime reads them when the game polls a controller.
 | 23:16 | right stick, X | | |
 | 31:24 | right stick, Y | | |
 
+With a SNAC pad chosen ([analogizer.md](analogizer.md), "SNAC controllers") its buttons are ORed into `KEY` bits 15:0 of `CONT1_KEY` and, with a second
+player, of `CONT2_KEY`; whatever the pad of the dock or the Pocket sends stays (the type bits, the sticks and the triggers are not touched). A `CONT2_KEY`
+with type 0 and a second player chosen reads with type 2.
+
 How the runtime maps these to the N64's controller is in [mips.md](mips.md) (Controllers and settings) and
 `lang/n64rt/n64rt_pad.h`.
 
@@ -114,7 +118,7 @@ each setting has an address of its own and needs no mask.
 | `INTERACT_CHANGED0` | `0x04` | R | 1 when the Pocket has written the whole word 0 since the CPU last read `INTERACT0` |
 | `INTERACT1` | `0x08` | RW | Word 1 |
 | `INTERACT_CHANGED1` | `0x0C` | R | The same for word 1 |
-| `INTERACT2` | `0x10` | RW | Word 2: the Analogizer's settings (`docs/analogizer.md`); bit 31 is the runtime's |
+| `INTERACT2` | `0x10` | RW | Word 2: the Analogizer's settings, the video and the SNAC pad (`docs/analogizer.md`); bit 31 is the runtime's |
 
 | n | `address` | Field | The setting (`pkg/pocket/Cores/tortuga.Mirlo64/interact.json`) |
 |---|---|---|---|
@@ -132,9 +136,10 @@ each setting has an address of its own and needs no mask.
 | 11 | `0x1000_012C` | `INTERACT1[19:15]` | Stick |
 | 12 | `0x1000_0130` | `INTERACT1[21:20]` | Restart Game: an action (`interact.json` type `action`) that writes 1 here whenever it is chosen; the runtime clears the field when it has seen it, so that the next choice is a change again (the Pocket writes the same value every time) |
 | 13 | `0x1000_0134` | `INTERACT1[23:22]` | D-pad |
-| 14 | `0x1000_0138` | `INTERACT1[24]` | Expansion Pak (0: in) |
-| 15 | `0x1000_013C` | `INTERACT1[25]` | Enable Gameshark codes (a variable of `interact.json` with an address the table gives to another setting writes that setting's field too: check that an address is not taken before giving it) |
+| 14 | `0x1000_0138` | `INTERACT1[25:24]` | Exp. Pak / Gameshark, a list of four: bit 24 the Expansion Pak out (0: in), bit 25 the Gameshark codes on |
+| 15 | `0x1000_013C` | `INTERACT1[25]` | Gameshark codes on, also written by n = 14 (no variable of `interact.json` has this address now; a variable of `interact.json` with an address the table gives to another setting writes that setting's field too: check that an address is not taken before giving it) |
 | 16 | `0x1000_0140` | `INTERACT2[4:0]` | Analogizer video (0 off, 1 RGBS, 2 RGsB, 3 YPbPr, 4 Y/C NTSC, 5 Y/C PAL, 6 RGBHV, 7..9 RGBHV with the odd lines 25, 50, 75 % darker; the scan-out's pads read it) |
+| 17 | `0x1000_0144` | `INTERACT2[9:5]` | Analogizer controller (bits 1:0: 0 off, 1 DB15, 2 NES, 3 SNES; bit 2 a second player: 5, 6, 7 are the 2P choices; 4 is off; `rtl/analogizer/an_snac.sv`) |
 
 ## APF_VIDEO
 

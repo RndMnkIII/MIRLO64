@@ -120,7 +120,7 @@ The layout is the same for every game (`lang/mips/include/layout.h`):
 | `0x4380_0000` | 8 MiB | The N64's RDRAM |
 
 The ranges between them are not used. The console is an N64 with the Expansion Pak, `osMemSize` 8 MiB, unless the
-core's "Expansion Pak" setting is off: then it is 4 MiB and the upper half does not answer the game (see
+core's "Exp. Pak / Gameshark" setting has the Pak out: then it is 4 MiB and the upper half does not answer the game (see
 [The Expansion Pak](#the-expansion-pak)). Every block addresses all 8 MiB. The runtime keeps nothing of its own in the
 game's RDRAM.
 
@@ -571,8 +571,8 @@ Such a ROM can be smaller than 1 MiB. The boot segment's patches (below) are not
 
 ### The Expansion Pak
 
-The core's "Expansion Pak" setting is a check box, on by default (`INTERACT1` bit 24, which is 0 with the Pak in). The
-loader reads it once, as the game starts. Without the Pak the game's memory is 4 MiB: that is what `osMemSize` says,
+The core's "Exp. Pak / Gameshark" setting is a list of four, "Pak in, codes off" by default; its low bit is the Pak (`INTERACT1`
+bit 24, which is 0 with the Pak in; bit 25 is the GameShark codes, below). The loader reads it once, as the game starts. Without the Pak the game's memory is 4 MiB: that is what `osMemSize` says,
 and the runtime sets MCTL's bit 10, with which the game's own accesses to the upper 4 MiB of the RDRAM's window go to
 the monitor and are answered as memory that is not there: a load reads 0 and a store goes nowhere. Software that sizes
 the memory itself, a word written and read back a megabyte at a time, finds 4 MiB too. The runtime's own code still
@@ -1030,7 +1030,7 @@ The setting "Controller 2 pak" (None, or Transfer Pak SD) puts a second one in c
 
 ### GameShark codes
 
-The setting "Enable Gameshark codes" (off by default) makes the runtime run the game's GameShark codes (`lang/n64rt/n64rt_cheat.c`,
+The setting "Exp. Pak / Gameshark", with the codes on (`INTERACT1` bit 25; off by default), makes the runtime run the game's GameShark codes (`lang/n64rt/n64rt_cheat.c`,
 `n64rt_gs.c`). They are a text file on the SD card, in `Assets/n64/common/gameshark/`, named after the cartridge: its four-character ID
 (ROM `0x3B..0x3E`: `NSME`, the game's code and its region) and, for a revision whose addresses differ, its version byte in decimal:
 `NSME.1.txt` is tried first, then `NSME.txt`. Every line that is a code is run, in the file's order, in every video field, as a GameShark does
@@ -1162,8 +1162,7 @@ scan-out instead.
 |---|---|---|---|
 | Crop Vertical | `0x1000_010C` | `interact0[9:5]` | None (0), **8 lines** (8), 12 lines (12) |
 | Crop Horizontal | `0x1000_0114` | `interact0[19:15]` | [1:0] columns at the right, [3:2] at the left, up to 3 each: None (0), 1 / 2 / 3 columns (5 / 10 / 15), 1 / 2 / 3 columns left (4 / 8 / 12), **1 column right** (1), 2 / 3 columns right (2 / 3) |
-| Expansion Pak | `0x1000_0138` | `interact1[24]` | **On** (0), off (1): a check box; read when the game starts |
-| Enable Gameshark codes | `0x1000_013C` | `interact1[25]` | **Off** (0), on (1): a check box; seen in every field ([GameShark codes](#gameshark-codes)) |
+| Exp. Pak / Gameshark | `0x1000_0138` | `interact1[25:24]` | A list of four: **Pak in, codes off** (0), Pak out, codes off (1), Pak in, codes on (2), Pak out, codes on (3). Bit 24 (the Pak out) is read when the game starts; bit 25 (the codes on) is seen in every field ([GameShark codes](#gameshark-codes)). Two checks until the menu needed the entry |
 | Controller 1 pak | `0x1000_0108` | `interact0[4:0]` | **None** (0), Controller Pak (1), Transfer Pak cartridge (2), Transfer Pak SD (3) |
 | Controller 2 pak | `0x1000_0118` | `interact0[24:20]` | **None** (0), Transfer Pak SD (3) |
 | Stick | `0x1000_012C` | `interact1[19:15]` | **D-pad** (0), L stick (1), R stick (2) |
@@ -1378,7 +1377,7 @@ stores and branches, cost in cycles (the table in "The FPU").
 | `rcp_bench.mk` | a ROM the released runtime runs in `sim/mips_soc` | the monitor's RCP emulation against the console's answers |
 | `tlb_bench.mk` | the same, with a runtime built with `TLBPROF=1` | the TLB instructions' results and their cost |
 | `tlbkeep_test.mk` | a ROM with a refill handler of its own | the entries kept when a `tlbwr` puts them out, and each rule that drops one |
-| `mem4_test.mk` | a ROM that sizes the memory itself | the "Expansion Pak" setting: 8 MiB with it, 4 MiB without (`INTERACT=0x10000138:1` in the simulator) |
+| `mem4_test.mk` | a ROM that sizes the memory itself | the "Exp. Pak / Gameshark" setting: 8 MiB with the Pak in, 4 MiB with it out (`INTERACT=0x10000138:1` in the simulator) |
 | `restart_test.mk` | a ROM that reads its Transfer Pak's status once, a moment after it starts, and leaves the RSP, the RDP and the AI busy | "Restart Game": `sim/mips_soc/restart_check.sh pak` loads the Game Boy ROM while the game runs and chooses the action twice, and checks that the first status the restarted game reads has the cartridge in, that the cartridge's RAM is written to its save file, and that the hardware's registers are the same at every start; `preload` checks a ROM loaded before the game starts; `game <rom>` compares a game's pictures at each start (`INTERACT_AT`, `SLOT_AT` and `POCKET_FS` are the bench's: above) |
 | `Makefile` (`pak_test`) | a program for `sim/mips_soc`, with `+gbcart=` | libultra's Controller Pak file system and Transfer Pak functions on `n64rt_pak.c` |
 | `si_test.mk` | a ROM and a runtime built for it | libultra's controller, EEPROM and pak code, and a pad that comes and goes |
