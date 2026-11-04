@@ -136,9 +136,9 @@ int main()
             pl = l; pc = c;
         }
         long poll_clocks = cyc - poll_start;
-        // NES 7, SNES 11 shifts. DB15: 23 shifts after the latch, and one more edge, the idle level coming up after the poll's last bit
+        // NES and SNES 16 shifts (the reader clocks a pad's 16 bits; a NES pad's last 8 and a SNES pad's last 4 read released). DB15: 23 shifts after the latch, and one more edge, the idle level coming up after the poll's last bit
         // (the next /LAT reloads the register, so it shifts nothing that is read)
-        int want_edges = ty == 1 ? 24 : ty == 2 ? 7 : 11;
+        int want_edges = ty == 1 ? 24 : 16;
         CHECK(lat_off - lat_on >= 2 * tick - 2 && lat_off - lat_on <= 2 * tick + 2, "%s: latch %ld clocks, wanted %ld", NAME[ty], lat_off - lat_on, 2 * tick);
         CHECK(edges == want_edges, "%s: %ld clock edges after the latch, wanted %d", NAME[ty], edges, want_edges);
         CHECK(clk_hi_min >= tick - 2 && clk_hi_max <= tick + 2, "%s: clock high %ld..%ld clocks, wanted %ld", NAME[ty], clk_hi_min, clk_hi_max, tick);
@@ -167,7 +167,7 @@ int main()
             uint32_t from = rep & 1 ? kb : ka, to = rep & 1 ? ka : kb;
             run(rnd() % 20000);                                                      // the change comes at any point of a poll
             set_pads(3, to, 0, false);
-            for (long i = 0; i < 40000; i++) { step(); if (t->key1 != from && t->key1 != to) odd++; }
+            for (long i = 0; i < 50000; i++) { step(); if (t->key1 != from && t->key1 != to) odd++; }
             CHECK(t->key1 == to, "SNES change %d: %04x wanted %04x", rep, t->key1, to);
         }
         CHECK(odd == 0, "a key word that was neither set, %ld clocks", odd);

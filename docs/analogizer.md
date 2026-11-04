@@ -6,9 +6,10 @@ The slot is also where a Game Boy cartridge goes (the Transfer Pak setting
 "Transfer Pak cartridge", rtl/soc/gb_cart.sv), so the two share the 32 pins:
 at any time one of them owns the port.
 
-All the modules under `rtl/analogizer` are written for this core from the
-adapter's pin map and from the video standards; none is taken from another
-project, so the tree stays under the Apache License.
+The modules under `rtl/analogizer` are written for this core from the
+adapter's pin map and from the video standards, with one exception:
+`serlatch_gc.v`, the SNAC pad reader, is the author's own from the
+Xain'd Sleena core (Analogizer_openFPGA-XaindSleena), where it runs on real pads.
 
 ## The port
 
@@ -113,7 +114,7 @@ that is the only time it is looked at.
 ## SNAC controllers
 
 A DB15, NES or SNES pad on the adapter's SNAC port (its USB 3 connector) plays as an N64 controller. `rtl/analogizer/an_snac.sv`
-polls the pad and gives its buttons as the Pocket's key bits, which `rtl/soc/mirlo_regs.sv` ORs into `CONT1_KEY` (and, with a second player,
+(the strobe, the port's ownership and the menu's pad type around `serlatch_gc.v`, the reader) polls the pad and gives its buttons as the Pocket's key bits, which `rtl/soc/mirlo_regs.sv` ORs into `CONT1_KEY` (and, with a second player,
 `CONT2_KEY`); the runtime then sees one more source of the same keys, and the "Stick", "C buttons", "Z button" ... settings apply to it as to the
 Pocket's own buttons. The Pocket's buttons and the dock's pads go on working at the same time. The SNAC port belongs to the adapter only
 when it owns the cartridge port ("Who owns the port", below): with a Game Boy cartridge in the slot the setting is ignored.
@@ -131,8 +132,8 @@ The pins (the adapter's configuration A: its A/B switch on A):
 
 With a pad chosen bank 0 is an input (`cart_tran_bank0_dir` low) and bank 1 an output, also when the video is off (its bits 5:0 are then 0).
 The pads send a pressed button as 0. A poll is a latch pulse and a clock pulse for each further bit, and goes on all the time: the NES's and the SNES's clock
-is 50 kHz (a console's is 83 kHz), a poll of 180 us (NES, 8 bits) or 260 us (SNES, 12 bits: the four after them are not read), and the DB15's 200 kHz, 125 us
-for its 24 bits. The waveforms are in the header of `an_snac.sv` and are measured by its bench.
+is 50 kHz (a console's is 83 kHz), a poll of 360 us (NES and SNES: the reader clocks 16 bits, the buttons are the first 8 and the first 12), and the DB15's 200 kHz, 125 us
+for its 24 bits. The bench measures the waveforms.
 
 The buttons go to the Pocket's keys by where they sit (the SNES's diamond is the Pocket's):
 
