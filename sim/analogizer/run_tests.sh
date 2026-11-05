@@ -8,6 +8,8 @@
 #   an_snac   (rtl/analogizer/an_snac.sv with serlatch_gc.v) every SNAC pad (DB15, NES, SNES; one and two players; the DB15 data on IO3 or IO6) against models of
 #             the pads' shift registers: the keys of many button sets, the latch and the clock (width, period, edges), the pins'
 #             owner, a change of pad in mid-poll, and that a key word is always one poll's
+#   an_joybus (rtl/analogizer/an_joybus.sv) four N64 pads on the Joybus against models of the pads (a wire each, a pull-up): their
+#             buttons and sticks, a pad taken out and put back, other speeds and delays, a line stuck low, the master's waveform
 #   ./run_tests.sh            (builds into $OBJ, default /tmp/an_sim_$USER)
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"; R="$(cd "$HERE/../.." && pwd)"; A="$R/rtl/analogizer"
@@ -46,5 +48,10 @@ build out an_out "$A/an_out.sv $A/an_yc.sv $A/an_ypbpr.sv $A/an_csync.sv $A/an_s
 # --- an_snac: the SNAC pads
 build snac an_snac "$A/an_snac.sv $A/serlatch_gc.v" "$HERE/an_snac/tb.cpp" --prefix Van_snac
 "$OBJ/snac/tb" | tail -1 | grep -q "ALL PASS" || { "$OBJ/snac/tb"; rc=1; }
+# --- an_joybus: the N64 pads on the Joybus
+build joybus an_joybus "$A/an_joybus.sv" "$HERE/an_joybus/tb.cpp" --prefix Van_joybus
+"$OBJ/joybus/tb" | tail -1 | grep -q "ALL PASS" || { "$OBJ/joybus/tb"; rc=1; }
+# --- the runtime's map for an N64 pad (KEY_TYPE 4), on the host
+cc -O1 -Wall -o "$OBJ/native_map" "$HERE/an_joybus/native_map.c" -I"$R/lang/n64rt" && "$OBJ/native_map" | tail -1 | grep -q "ALL PASS" || { "$OBJ/native_map"; rc=1; }
 [ $rc = 0 ] && echo "ALL PASS" || echo "SOME FAILED"
 exit $rc

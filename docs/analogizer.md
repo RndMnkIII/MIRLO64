@@ -147,6 +147,37 @@ The second player (`NES 2P`, `SNES 2P`, `DB15 2P`) is controller 2: the second p
 2 the dock does not report is told to the runtime as a dock pad without analog (`KEY_TYPE` 2), because the runtime takes a pad with type 0 for no controller
 (`pad_there` in `lang/n64rt/n64rt_io.c`); the choice is the only thing that says a second pad is there, so with `NES`, `SNES` or `DB15` alone the N64 sees one.
 
+## N64 controllers
+
+Up to four N64 controllers on the SNAC port play as the N64's own four, through `rtl/analogizer/an_joybus.sv`: the menu's "Analogizer controller"
+= "N64 pads (1-4)". The adapter is the N64 SNAC board (a 1 kohm pull-up to 3.3 V on each data line, an LDO for the pads) with its cable harness, on the
+adapter's configuration A:
+
+| port | data line | cartridge port pin | direction |
+|---|---|---|---|
+| 1 | GND_D (IO5) | `cart_tran_pin30` | its own |
+| 2 | TX- (IO6) | `cart_tran_pin31` | its own |
+| 3 | RX- (IO3) | `cart_tran_bank0[4]` | bank 0's, one for the four bits |
+| 4 | RX+ (IN4) | `cart_tran_bank0[7]` | bank 0's |
+
+The Joybus has one wire a pad and nobody drives a 1: the FPGA pulls the line low (the pin an output with the value 0) or lets it go (an input) and the
+pull-up makes the 1. Bank 0 has one direction for its four bits, so the four lines are always driven together and let go together: one poll, the command
+`0x01` (the buttons) in 4 us cells and a stop bit, goes to every pad at once and each pad's reply is heard on its own line (about 175 us; a poll every
+millisecond). A pad is there after one good reply and until 32 polls in a row have none, so a poll lost to noise is not a controller taken out. The pins'
+levels while a poll is not going on are the pull-ups' (all lines let go); bank 1's bits 7:6 (OUT2, OUT1) and the pins the harness does not take are not used.
+
+The pad's buttons are the N64's own, so they do not go through the Pocket's keys: while a pad is there, its port's `KEY` word (`CONT1_KEY` ... `CONT4_KEY`)
+is `KEY_TYPE` 4 with the 16 buttons in the CONT_ layout in bits 15:0 (A at bit 15 ... C-right at bit 0; the pad's reset flag is cleared) and its `JOY` word
+the stick's two signed bytes (X in 7:0, Y in 15:8). The runtime takes a type 4 pad as it is (`n64rt_pad_map` in `lang/n64rt/n64rt_pad.h`): the Stick,
+C buttons, Z and the other settings of the Pocket's keys do not touch it. A port with no pad is what it was (the Pocket's own controls for port 1, the dock's pad
+for 2 to 4, nothing otherwise), so a controller 2 to 4 is there when its pad answers; while a pad 1 answers, the Pocket's own buttons do not play.
+
+What the Joybus does not do here: the Controller Pak, the Rumble Pak and the Transfer Pak of a pad (the pak commands are not sent; the pad's accessory is not
+seen), and the VRU. The N64 SNAC board's LDO has to feed four pads (and a rumble motor draws more than a pad); its datasheet's output current is the limit.
+
+The bench (`sim/analogizer/an_joybus`) has four models of the pad on four wires with pull-ups: every button and stick, a pad taken out and put back, other
+speeds and reply delays, a line stuck low, the command's pulses and cells and the poll's period; `native_map.c` checks the runtime's type 4 on the host.
+
 ## Settings
 
 Two entries in the core's menu: "Analogizer controller": Off, DB15, NES, SNES, DB15 2P, NES 2P, SNES 2P
@@ -157,7 +188,7 @@ RGBHV picture has). The Pocket's own picture stays on.
 The Pocket's menu has two limits, both measured on a Pocket: it shows only 14 of the core's entries (a 15th loads without
 an error and is silently left out, so "Restart Game" has to stay the 14th, the last), and it refuses an `interact.json`
 whose lists have more than about 75 options in all ("Load error in 'interact'": 75 loads, 77 does not, 76 untried). The
-core's menu has 14 entries and 70 options: the two sticks share one "Stick dead zone" (steps of 10 %, 0 to 70 %) to make
+core's menu has 14 entries and 71 options: the two sticks share one "Stick dead zone" (steps of 10 %, 0 to 70 %) to make
 room for the video entry, and the Expansion Pak and the GameShark codes, two checks, are one list of four ("Exp. Pak / Gameshark":
-`INTERACT1[25:24]`, bit 24 the Pak out, bit 25 the codes on) to make room for the controller entry. 70 is five below the
+`INTERACT1[25:24]`, bit 24 the Pak out, bit 25 the codes on) to make room for the controller entry. 71 is four below the
 75 that loads: the next entry that needs options has to come out of one of these.

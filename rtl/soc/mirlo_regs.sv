@@ -69,7 +69,10 @@ module mirlo_regs (
     output wire  [1:0]  ia_an_scan,         //   7..9 RGBHV with the odd lines 25, 50, 75 % darker: mode 6, scan 1..3), and INTERACT2's bit 31, which the
     output wire         ia_an_own,          //   runtime sets: the adapter owns the port (docs/analogizer.md)
     output wire  [2:0]  ia_an_snac,         // interact: the Analogizer's SNAC pad (field 17, INTERACT2[9:5]): [1:0] 0 off, 1 DB15, 2 NES, 3 SNES; [2] a second player
+    output wire         ia_an_n64,          //   and 8 (bit 3 of the field): N64 pads on the Joybus, up to four (rtl/analogizer/an_joybus.sv)
     input  wire  [15:0] snac_key1, snac_key2,   // the SNAC pad's keys (rtl/analogizer/an_snac.sv), in the Pocket's key bits: ORed into CONT1_KEY and CONT2_KEY
+    input  wire   [3:0] n64_present,            // the N64 pads there are (rtl/analogizer/an_joybus.sv), their buttons (the N64's own bits) and sticks ({Y, X}), 16 bits a port
+    input  wire  [63:0] n64_btn, n64_stick,
     output wire  [4:0]  ia_crop_v,          // interact: "Crop Vertical" (lines; field 3) and "Crop Right" (pixels; field 5)
     output wire  [1:0]  ia_crop_r,          // ("Crop Horizontal", field 5: [1:0] columns at the right, [3:2] at the left)
     output wire  [1:0]  ia_crop_l,
@@ -237,6 +240,7 @@ assign ia_an_mode = ia_an_dark ? 3'd6 : ia_an_video[2:0];
 assign ia_an_scan = ia_an_dark ? 2'(ia_an_video - 4'd6) : 2'd0;
 assign ia_an_own  = ia2[31];
 assign ia_an_snac = ia2[7:5];
+assign ia_an_n64  = ia2[8];
 always_ff @(posedge clk) begin
     if (rst) begin ia0 <= 0; ia1 <= 0; ia2 <= 0; ia_ch0 <= 0; ia_ch1 <= 0; end
     else begin
@@ -468,7 +472,18 @@ always_ff @(posedge clk) begin pad_q <= pad_ram[a[5:2]]; pad_ix <= a[5:2]; end
 // second player chosen, CONT2_KEY's (the keys' bits only: the type and the sticks stay the dock's). A pad 2 the dock does not report
 // (KEY_TYPE 0, which the runtime takes as no controller) is, with a second player chosen, a dock pad without analog (type 2).
 wire snac_p2 = ia2[31] && ia2[7] && ia2[6:5] != 2'd0;
-wire [31:0] pad_ov = pad_ix == 4'd0 ? {pad_q[31:16], pad_q[15:0] | snac_key1}
+// An N64 pad on the SNAC port (an_joybus.sv) takes the place of the Pocket's controller of its number while it is there: the word is a
+// KEY_TYPE 4 one (the buttons in the N64's own bits, no settings: lang/n64rt/n64rt_pad.h) and its JOY word the stick's two signed bytes; a
+// port with no pad is the dock's, or the Pocket's, as it was (so a pad 2..4 that is not there is no controller).
+wire        n64_on  = ia2[31] && ia2[8];
+wire  [1:0] n64_p   = pad_ix[1:0];
+wire        n64_key = n64_on && pad_ix[3:2] == 2'd0 && n64_present[n64_p];
+wire        n64_joy = n64_on && pad_ix[3:2] == 2'd1 && n64_present[n64_p];
+wire [15:0] n64_b   = n64_btn[{n64_p, 4'd0} +: 16];
+wire [15:0] n64_s   = n64_stick[{n64_p, 4'd0} +: 16];
+wire [31:0] pad_ov = n64_key ? {4'd4, 12'd0, n64_b}
+                   : n64_joy ? {16'd0, n64_s}
+                   : pad_ix == 4'd0 ? {pad_q[31:16], pad_q[15:0] | snac_key1}
                    : pad_ix == 4'd1 ? {(snac_p2 && pad_q[31:28] == 4'd0) ? 4'd2 : pad_q[31:28], pad_q[27:16], pad_q[15:0] | snac_key2}
                    : pad_q;
 // The rest: the map's banks are a[11:8], a register's word in its bank a[5:2] (a[15:12] and a[7:6] are 0 for every register).

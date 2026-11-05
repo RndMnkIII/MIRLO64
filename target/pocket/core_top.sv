@@ -254,6 +254,13 @@ module core_top (
   wire  [2:0] snac_kind;
   wire        snac_drive, snac_clk, snac_lat;
   wire [15:0] snac_key1, snac_key2;
+  // N64 pads on the Joybus (rtl/analogizer/an_joybus.sv), when chosen in the menu: the SNAC's four data lines are the pads' -- pin 30
+  // (port 1), pin 31 (port 2), bank 0's bits 4 (port 3) and 7 (port 4), each pulled low (an output, value 0) or let go (an input) -- and
+  // bank 1's bits 7:6 and the SNAC pad's other pins stay as the video leaves them
+  wire        an_n64, jb_drive;
+  wire  [3:0] n64_present;
+  wire [63:0] n64_btn, n64_stick;
+  wire        jb_en = an_own && an_n64;
   wire [2:0]  an_mode;
   wire [1:0]  an_scan;
   wire [7:0]  an_bank3, an_bank2;
@@ -278,14 +285,15 @@ module core_top (
                                           : gb_d_oe ? gb_d_o : 8'hzz;
   assign cart_tran_bank1_dir     = an_own ? bank1_out : gb_d_dir;
   // bank 0: the cartridge's PHI, /WR, /RD and /CS (idle high: the Analogizer's SNAC port at rest), or the SNAC pad's data, inputs
-  assign cart_tran_bank0         = snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
-  assign cart_tran_bank0_dir     = !snac_drive;
+  assign cart_tran_bank0         = jb_en ? (jb_drive ? 4'b0000 : 4'bzzzz) : snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
+  assign cart_tran_bank0_dir     = jb_en ? jb_drive : !snac_drive;
   // pin 30: the SNAC pad's second clock (a copy of the first), else as the template leaves it
-  assign cart_tran_pin30         = snac_drive ? snac_clk : 1'b0;
-  assign cart_tran_pin30_dir     = snac_drive ? 1'b1 : gb_on ? 1'b0 : 1'bz;   // (off: as the template leaves it)
-  assign cart_pin30_pwroff_reset = an_own ? bank1_out : gb_on;
-  assign cart_tran_pin31         = 1'bz;                   // (the SNAC pad's IO6, an input)
-  assign cart_tran_pin31_dir     = 1'b0;
+  assign cart_tran_pin30         = jb_en ? 1'b0 : snac_drive ? snac_clk : 1'b0;
+  assign cart_tran_pin30_dir     = jb_en ? jb_drive : snac_drive ? 1'b1 : gb_on ? 1'b0 : 1'bz;   // (off: as the template leaves it)
+  assign cart_pin30_pwroff_reset = an_own ? (bank1_out || jb_en) : gb_on;
+  // pin 31: the SNAC pad's IO6, an input (the Joybus's port 2: low or let go)
+  assign cart_tran_pin31         = jb_en && jb_drive ? 1'b0 : 1'bz;
+  assign cart_tran_pin31_dir     = jb_en && jb_drive;
 
   // link port is input only
   assign port_tran_so            = 1'bz;
@@ -1082,6 +1090,7 @@ module core_top (
       .vga_skip(skip),
       .vga_woven(an_vid_woven_s),
       .an_mode(an_mode), .an_scan(an_scan), .an_own(an_own), .snac_kind(snac_kind), .snac_key1(snac_key1), .snac_key2(snac_key2),
+      .an_n64(an_n64), .n64_present(n64_present), .n64_btn(n64_btn), .n64_stick(n64_stick),
 
       .use_jtag(use_jtag_s),
 
@@ -1275,6 +1284,12 @@ module core_top (
       .clk(clk_sys), .own(an_own), .kind(snac_kind),
       .dat1(cart_tran_bank0[4]), .dat1b(cart_tran_pin31), .dat2(cart_tran_bank0[5]),
       .clk_o(snac_clk), .lat_o(snac_lat), .drive(snac_drive), .key1(snac_key1), .key2(snac_key2)
+  );
+
+  // The N64 pads (up to four, one wire each): their buttons and sticks go to the SoC, which gives them to the game as the controllers'
+  an_joybus #(.CLK_HZ(62_500_000)) joybus (
+      .clk(clk_sys), .en(jb_en), .si({cart_tran_bank0[7], cart_tran_bank0[4], cart_tran_pin31, cart_tran_pin30}),
+      .drive(jb_drive), .present(n64_present), .btn(n64_btn), .stick(n64_stick)
   );
 
 endmodule

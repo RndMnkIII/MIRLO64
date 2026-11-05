@@ -84,7 +84,7 @@
 #define KEY_R2     (1u << 11)
 #define KEY_SELECT (1u << 14)
 #define KEY_START  (1u << 15)
-#define KEY_TYPE(k) ((k) >> 28)          /* 1 Pocket, 2 dock pad without analog, 3 dock pad with analog */
+#define KEY_TYPE(k) ((k) >> 28)          /* 1 Pocket, 2 dock pad without analog, 3 dock pad with analog, 4 an N64 pad on the Analogizer's SNAC port */
 
 /* a stick's two bytes (0x80 centred; Y up is the byte's low end) as the N64's stick, -80 .. 80 each: a radial dead zone (dzc: the
  * setting's code) -- nothing within that distance of the centre, past it the deflection linear from the zone's edge to the end of
@@ -127,6 +127,15 @@ static inline uint32_t n64rt_pad_key(uint32_t code, uint32_t dflt)
 static inline void n64rt_pad_map(uint32_t k, uint32_t j, uint32_t set0, uint32_t set1, uint16_t *button, int8_t *stick_x, int8_t *stick_y)
 {
     const uint32_t type = KEY_TYPE(k);
+    /* An N64 pad (the Analogizer's SNAC port, rtl/analogizer/an_joybus.sv; the hardware makes the word): its buttons are the N64's own,
+     * KEY bits 15:0 in the CONT_ layout, and its stick the pad's bytes, JOY bits 7:0 X and 15:8 Y, signed. The settings (Stick, C
+     * buttons, Z ... ) are for the Pocket's keys and do not touch it. */
+    if (type == 4u) {
+        *button = (uint16_t)(k & 0xFFFFu);
+        *stick_x = (int8_t)(j & 0xFFu);
+        *stick_y = (int8_t)((j >> 8) & 0xFFu);
+        return;
+    }
     /* stick bytes to believe: a type 3 pad's always, a type 2 pad's unless they are what a pad with none would send */
     const int analog = type == 3u || (type == 2u && j != 0u && j != 0xFFFFFFFFu);
     /* the dock raises the D-pad's keys too while a pad's left stick is pushed (for the Pocket's menus): when a setting reads the
