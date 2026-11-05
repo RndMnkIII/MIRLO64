@@ -257,7 +257,8 @@ module core_top (
   // N64 pads on the Joybus (rtl/analogizer/an_joybus.sv), when chosen in the menu: the SNAC's four data lines are the pads' -- pin 30
   // (port 1), pin 31 (port 2), bank 0's bits 4 (port 3) and 7 (port 4), each pulled low (an output, value 0) or let go (an input) -- and
   // bank 1's bits 7:6 and the SNAC pad's other pins stay as the video leaves them
-  wire        an_n64, jb_drive;
+  wire        an_n64;
+  wire  [3:0] jb_drive;               // (a bit a port: that line is pulled low; the pads are polled one at a time)
   wire  [3:0] n64_present;
   wire [63:0] n64_btn, n64_stick;
   wire        jb_en = an_own && an_n64;
@@ -285,15 +286,18 @@ module core_top (
                                           : gb_d_oe ? gb_d_o : 8'hzz;
   assign cart_tran_bank1_dir     = an_own ? bank1_out : gb_d_dir;
   // bank 0: the cartridge's PHI, /WR, /RD and /CS (idle high: the Analogizer's SNAC port at rest), or the SNAC pad's data, inputs
-  assign cart_tran_bank0         = jb_en ? (jb_drive ? 4'b0000 : 4'bzzzz) : snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
-  assign cart_tran_bank0_dir     = jb_en ? jb_drive : !snac_drive;
+  // (bank 0's direction is one for its bits: while port 3 or 4 is polled the bank is an output, the polled bit low and the others high, the
+  // level the pull-ups give, so a pad's line is never driven but for its own poll)
+  wire        jb_b0 = jb_drive[2] | jb_drive[3];
+  assign cart_tran_bank0         = jb_en ? (jb_b0 ? {~jb_drive[3], 2'b11, ~jb_drive[2]} : 4'bzzzz) : snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
+  assign cart_tran_bank0_dir     = jb_en ? jb_b0 : !snac_drive;
   // pin 30: the SNAC pad's second clock (a copy of the first), else as the template leaves it
-  assign cart_tran_pin30         = jb_en ? (jb_drive ? 1'b0 : 1'bz) : snac_drive ? snac_clk : 1'b0;   // (the Joybus: low, or let go -- the FPGA's pin too, or it fights the pad's reply)
-  assign cart_tran_pin30_dir     = jb_en ? jb_drive : snac_drive ? 1'b1 : gb_on ? 1'b0 : 1'bz;   // (off: as the template leaves it)
+  assign cart_tran_pin30         = jb_en ? (jb_drive[0] ? 1'b0 : 1'bz) : snac_drive ? snac_clk : 1'b0;   // (the Joybus: low, or let go -- the FPGA's pin too, or it fights the pad's reply)
+  assign cart_tran_pin30_dir     = jb_en ? jb_drive[0] : snac_drive ? 1'b1 : gb_on ? 1'b0 : 1'bz;   // (off: as the template leaves it)
   assign cart_pin30_pwroff_reset = an_own ? (bank1_out || jb_en) : gb_on;
   // pin 31: the SNAC pad's IO6, an input (the Joybus's port 2: low or let go)
-  assign cart_tran_pin31         = jb_en && jb_drive ? 1'b0 : 1'bz;
-  assign cart_tran_pin31_dir     = jb_en && jb_drive;
+  assign cart_tran_pin31         = jb_en && jb_drive[1] ? 1'b0 : 1'bz;
+  assign cart_tran_pin31_dir     = jb_en && jb_drive[1];
 
   // link port is input only
   assign port_tran_so            = 1'bz;

@@ -161,9 +161,11 @@ adapter's configuration A:
 | 4 | RX+ (IN4) | `cart_tran_bank0[7]` | bank 0's |
 
 The Joybus has one wire a pad and nobody drives a 1: the FPGA pulls the line low (the pin an output with the value 0) or lets it go (an input) and the
-pull-up makes the 1. Bank 0 has one direction for its four bits, so the four lines are always driven together and let go together: one poll, the command
-`0x01` (the buttons) in 4 us cells and a stop bit, goes to every pad at once and each pad's reply is heard on its own line (about 175 us; a poll every
-millisecond). A pad is there after one good reply and until 32 polls in a row have none, so a poll lost to noise is not a controller taken out. The pins'
+pull-up makes the 1. The pads are polled one at a time, a slot of 250 us each (a round of four is 1 ms, so a pad is read every millisecond): the command
+`0x01` (the buttons) in 4 us cells and a stop bit goes to the polled port's line only, and only its receiver listens (about 175 us a poll; 140 for a
+port with no pad). Bank 0 has one direction for its two data bits, so while port 3 or 4 is polled the bank is an output, the polled bit low and the
+other high (the level its pull-up gives); the other lines are always let go. A pad is there after one good reply and until 32 polls in a row
+have none, so a poll lost to noise is not a controller taken out. The pins'
 levels while a poll is not going on are the pull-ups' (all lines let go); bank 1's bits 7:6 (OUT2, OUT1) and the pins the harness does not take are not used.
 
 The pad's buttons are the N64's own, so they do not go through the Pocket's keys: while a pad is there, its port's `KEY` word (`CONT1_KEY` ... `CONT4_KEY`)

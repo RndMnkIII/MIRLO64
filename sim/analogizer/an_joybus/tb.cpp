@@ -1,8 +1,8 @@
 // an_joybus against four models of N64 controllers on the Joybus: one wire each, a 1 kohm pull-up (high unless the master or the pad
-// pulls it low), the master's `drive` pulling all four low together. A pad decodes the command from the widths of the low pulses
+// pulls it low), the master's `drive` pulling the polled port's line low (the ports one at a time, a slot of 250 us each). A pad decodes the command from the widths of the low pulses
 // (under 2 us a 1), and answers the buttons command (0x01) with 32 bits and a stop bit in 4 us cells after a delay of its own, at a speed
 // of its own. Checks: every pad's buttons and stick; a pad taken out (gone after the MISS polls, not before), put back; pads with other
-// speeds and delays; the master's waveform (the command's nine pulses, the cell, the poll period); no pad, a line stuck low, `en` low.
+// speeds and delays; the master's waveform (the command's nine pulses, the cell, the slot, one line at a time, the four ports in turn); no pad, a line stuck low, `en` low.
 // Exit status 1 on a failure.
 #include "Van_joybus.h"
 #include <cstdint>
@@ -73,15 +73,19 @@ static Pad pad[4];
 static bool rec = false;
 static std::vector<long> fall_t, rise_t;
 static bool prev_drive = false;
+static std::vector<int> fall_port;
+static long multi_drive = 0;        // cycles with more than one line pulled low
 
 static void step()
 {
     t->clk = 0; t->eval(); t->clk = 1; t->eval();
-    bool d = t->drive;
-    if (rec) { if (d && !prev_drive) fall_t.push_back(cyc); if (!d && prev_drive) rise_t.push_back(cyc); }
+    uint32_t dv = t->drive & 0xF;
+    bool d = dv != 0;
+    if (dv & (dv - 1)) multi_drive++;
+    if (rec) { if (d && !prev_drive) { fall_t.push_back(cyc); fall_port.push_back(__builtin_ctz(dv)); } if (!d && prev_drive) rise_t.push_back(cyc); }
     prev_drive = d;
     uint32_t si = 0;
-    for (int i = 0; i < 4; i++) { si |= (uint32_t)pad[i].line_in(d) << i; pad[i].tick(); }
+    for (int i = 0; i < 4; i++) { si |= (uint32_t)pad[i].line_in((dv >> i) & 1) << i; pad[i].tick(); }
     t->si = si;
     cyc++;
 }
@@ -162,10 +166,10 @@ int main()
     check_pads("line free again", 0xF);
 
     // the master's waveform: nine low pulses a poll (the command 0x01 and the stop bit), a 4 us cell, a poll every ~1 ms
-    fall_t.clear(); rise_t.clear(); rec = true; run_ms(2.2); rec = false;
-    // find a poll: three consecutive falls 248 cycles apart begin one; take the first fall after a long gap
+    fall_t.clear(); rise_t.clear(); fall_port.clear(); rec = true; run_ms(2.2); rec = false;
+    // find a poll: nine falls 248 cycles apart begin one; take the first fall after a long gap (a slot is 250 us, a poll about 36 us of falls)
     size_t k0 = 0;
-    for (size_t i = 1; i < fall_t.size(); i++) if (fall_t[i] - fall_t[i - 1] > us(500)) { k0 = i; break; }
+    for (size_t i = 1; i < fall_t.size(); i++) if (fall_t[i] - fall_t[i - 1] > us(100)) { k0 = i; break; }
     CHECK(k0 > 0 && fall_t.size() >= k0 + 9 && rise_t.size() >= k0 + 9, "no complete poll recorded (falls %zu, k0 %zu)", fall_t.size(), k0);
     if (k0 > 0 && fall_t.size() >= k0 + 10 && rise_t.size() >= k0 + 9) {
         // (rise_t has the same index as fall_t when the first event is a fall; shift if a rise came first)
@@ -177,9 +181,16 @@ int main()
             CHECK(labs(w - want) <= 2, "pulse %d: %ld cycles low, wanted %ld", i, w, want);
             if (i < 8) { long cell = fall_t[k0 + i + 1] - fall_t[k0 + i]; CHECK(labs(cell - 248) <= 2, "cell %d: %ld cycles, wanted 248", i, cell); }
         }
-        long per = fall_t[k0 + 9] - fall_t[k0];
-        CHECK(fall_t.size() > k0 + 9 && per > us(900) && per < us(1300), "poll period %ld us", (long)(per / 62.5));
+        // one line at a time, the four ports in turn: the 9 falls of a poll are one port's, and the next slot (250 us on) the next port's
+        for (int i = 1; i < 9; i++) CHECK(fall_port[k0 + i] == fall_port[k0], "poll's fall %d on port %d, the poll on port %d", i, fall_port[k0 + i] + 1, fall_port[k0] + 1);
+        long per = fall_t.size() > k0 + 9 ? fall_t[k0 + 9] - fall_t[k0] : 0;
+        CHECK(per > us(240) && per < us(260), "slot %ld us", (long)(per / 62.5));
+        CHECK(fall_port.size() > k0 + 9 && fall_port[k0 + 9] == (fall_port[k0] + 1) % 4, "next slot's port %d after port %d", fall_port.size() > k0 + 9 ? fall_port[k0 + 9] + 1 : 0, fall_port[k0] + 1);
+        size_t last = k0; int seen = 0;
+        for (size_t i = k0; i < fall_t.size(); i++) if (fall_t[i] - fall_t[last] > us(100) || i == k0) { seen |= 1 << fall_port[i]; last = i; }
+        CHECK(seen == 0xF, "ports polled in 2.2 ms: %x", seen);
     }
+    CHECK(multi_drive == 0, "%ld cycles with more than one line pulled low", multi_drive);
 
     // no pad at all
     for (int i = 0; i < 4; i++) pad[i].conn = false;
