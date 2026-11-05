@@ -288,7 +288,7 @@ module core_top (
   assign cart_tran_bank0         = jb_en ? (jb_drive ? 4'b0000 : 4'bzzzz) : snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
   assign cart_tran_bank0_dir     = jb_en ? jb_drive : !snac_drive;
   // pin 30: the SNAC pad's second clock (a copy of the first), else as the template leaves it
-  assign cart_tran_pin30         = jb_en ? 1'b0 : snac_drive ? snac_clk : 1'b0;
+  assign cart_tran_pin30         = jb_en ? (jb_drive ? 1'b0 : 1'bz) : snac_drive ? snac_clk : 1'b0;   // (the Joybus: low, or let go -- the FPGA's pin too, or it fights the pad's reply)
   assign cart_tran_pin30_dir     = jb_en ? jb_drive : snac_drive ? 1'b1 : gb_on ? 1'b0 : 1'bz;   // (off: as the template leaves it)
   assign cart_pin30_pwroff_reset = an_own ? (bank1_out || jb_en) : gb_on;
   // pin 31: the SNAC pad's IO6, an input (the Joybus's port 2: low or let go)
