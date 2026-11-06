@@ -352,6 +352,39 @@
 #define CSR_MONITOR_PI2_ADDR (CSR_BASE + 0xd3c)
 #define CSR_MONITOR_PI2_SIZE 1
 
+/* JOYBUS */
+#define CSR_JOYBUS_BASE (CSR_BASE + 0xe00)
+#define CSR_JOYBUS_CTL_OFS 0xe00
+#define CSR_JOYBUS_CTL_ADDR (CSR_BASE + 0xe00)
+#define CSR_JOYBUS_CTL_SIZE 1
+#define CSR_JOYBUS_CTL_TX_OFFSET 0
+#define CSR_JOYBUS_CTL_TX_SIZE 6
+#define CSR_JOYBUS_CTL_RX_OFFSET 6
+#define CSR_JOYBUS_CTL_RX_SIZE 6
+#define CSR_JOYBUS_CTL_PORT_OFFSET 12
+#define CSR_JOYBUS_CTL_PORT_SIZE 2
+#define CSR_JOYBUS_CTL_GO_OFFSET 16
+#define CSR_JOYBUS_CTL_GO_SIZE 1
+#define CSR_JOYBUS_ADDR_OFS 0xe04
+#define CSR_JOYBUS_ADDR_ADDR (CSR_BASE + 0xe04)
+#define CSR_JOYBUS_ADDR_SIZE 1
+#define CSR_JOYBUS_DATA_OFS 0xe08
+#define CSR_JOYBUS_DATA_ADDR (CSR_BASE + 0xe08)
+#define CSR_JOYBUS_DATA_SIZE 1
+#define CSR_JOYBUS_STATUS_OFS 0xe0c
+#define CSR_JOYBUS_STATUS_ADDR (CSR_BASE + 0xe0c)
+#define CSR_JOYBUS_STATUS_SIZE 1
+#define CSR_JOYBUS_STATUS_BUSY_OFFSET 0
+#define CSR_JOYBUS_STATUS_BUSY_SIZE 1
+#define CSR_JOYBUS_STATUS_DONE_OFFSET 1
+#define CSR_JOYBUS_STATUS_DONE_SIZE 1
+#define CSR_JOYBUS_STATUS_RESULT_OFFSET 2
+#define CSR_JOYBUS_STATUS_RESULT_SIZE 2
+#define CSR_JOYBUS_STATUS_GOT_OFFSET 4
+#define CSR_JOYBUS_STATUS_GOT_SIZE 6
+#define CSR_JOYBUS_STATUS_PRESENT_OFFSET 16
+#define CSR_JOYBUS_STATUS_PRESENT_SIZE 3
+
 /* GB_CART */
 #define CSR_GB_CART_BASE (CSR_BASE + 0xc00)
 #define CSR_GB_CART_ID_OFS 0xc00
@@ -611,6 +644,41 @@ static inline uint32_t monitor_sidone_read(void) { return csr_read_simple(CSR_MO
 static inline void monitor_sidone_write(uint32_t v) { csr_write_simple(v, CSR_MONITOR_SIDONE_ADDR); }
 static inline uint32_t monitor_pi2_read(void) { return csr_read_simple(CSR_MONITOR_PI2_ADDR); }
 static inline void monitor_pi2_write(uint32_t v) { csr_write_simple(v, CSR_MONITOR_PI2_ADDR); }
+
+/* JOYBUS */
+static inline uint32_t joybus_ctl_read(void) { return csr_read_simple(CSR_JOYBUS_CTL_ADDR); }
+static inline void joybus_ctl_write(uint32_t v) { csr_write_simple(v, CSR_JOYBUS_CTL_ADDR); }
+static inline uint32_t joybus_ctl_tx_extract(uint32_t r) { return (r >> 0) & 0x3fu; }
+static inline uint32_t joybus_ctl_tx_read(void) { return joybus_ctl_tx_extract(joybus_ctl_read()); }
+static inline uint32_t joybus_ctl_tx_replace(uint32_t r, uint32_t v) { return (r & ~(0x3fu << 0)) | ((v & 0x3fu) << 0); }
+static inline void joybus_ctl_tx_write(uint32_t v) { joybus_ctl_write(joybus_ctl_tx_replace(joybus_ctl_read(), v)); }
+static inline uint32_t joybus_ctl_rx_extract(uint32_t r) { return (r >> 6) & 0x3fu; }
+static inline uint32_t joybus_ctl_rx_read(void) { return joybus_ctl_rx_extract(joybus_ctl_read()); }
+static inline uint32_t joybus_ctl_rx_replace(uint32_t r, uint32_t v) { return (r & ~(0x3fu << 6)) | ((v & 0x3fu) << 6); }
+static inline void joybus_ctl_rx_write(uint32_t v) { joybus_ctl_write(joybus_ctl_rx_replace(joybus_ctl_read(), v)); }
+static inline uint32_t joybus_ctl_port_extract(uint32_t r) { return (r >> 12) & 0x3u; }
+static inline uint32_t joybus_ctl_port_read(void) { return joybus_ctl_port_extract(joybus_ctl_read()); }
+static inline uint32_t joybus_ctl_port_replace(uint32_t r, uint32_t v) { return (r & ~(0x3u << 12)) | ((v & 0x3u) << 12); }
+static inline void joybus_ctl_port_write(uint32_t v) { joybus_ctl_write(joybus_ctl_port_replace(joybus_ctl_read(), v)); }
+static inline uint32_t joybus_ctl_go_extract(uint32_t r) { return (r >> 16) & 0x1u; }
+static inline uint32_t joybus_ctl_go_read(void) { return joybus_ctl_go_extract(joybus_ctl_read()); }
+static inline uint32_t joybus_ctl_go_replace(uint32_t r, uint32_t v) { return (r & ~(0x1u << 16)) | ((v & 0x1u) << 16); }
+static inline void joybus_ctl_go_write(uint32_t v) { joybus_ctl_write(joybus_ctl_go_replace(joybus_ctl_read(), v)); }
+static inline uint32_t joybus_addr_read(void) { return csr_read_simple(CSR_JOYBUS_ADDR_ADDR); }
+static inline void joybus_addr_write(uint32_t v) { csr_write_simple(v, CSR_JOYBUS_ADDR_ADDR); }
+static inline uint32_t joybus_data_read(void) { return csr_read_simple(CSR_JOYBUS_DATA_ADDR); }
+static inline void joybus_data_write(uint32_t v) { csr_write_simple(v, CSR_JOYBUS_DATA_ADDR); }
+static inline uint32_t joybus_status_read(void) { return csr_read_simple(CSR_JOYBUS_STATUS_ADDR); }
+static inline uint32_t joybus_status_busy_extract(uint32_t r) { return (r >> 0) & 0x1u; }
+static inline uint32_t joybus_status_busy_read(void) { return joybus_status_busy_extract(joybus_status_read()); }
+static inline uint32_t joybus_status_done_extract(uint32_t r) { return (r >> 1) & 0x1u; }
+static inline uint32_t joybus_status_done_read(void) { return joybus_status_done_extract(joybus_status_read()); }
+static inline uint32_t joybus_status_result_extract(uint32_t r) { return (r >> 2) & 0x3u; }
+static inline uint32_t joybus_status_result_read(void) { return joybus_status_result_extract(joybus_status_read()); }
+static inline uint32_t joybus_status_got_extract(uint32_t r) { return (r >> 4) & 0x3fu; }
+static inline uint32_t joybus_status_got_read(void) { return joybus_status_got_extract(joybus_status_read()); }
+static inline uint32_t joybus_status_present_extract(uint32_t r) { return (r >> 16) & 0x7u; }
+static inline uint32_t joybus_status_present_read(void) { return joybus_status_present_extract(joybus_status_read()); }
 
 /* GB_CART */
 static inline uint32_t gb_cart_id_read(void) { return csr_read_simple(CSR_GB_CART_ID_ADDR); }

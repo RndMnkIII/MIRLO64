@@ -149,36 +149,50 @@ The second player (`NES 2P`, `SNES 2P`, `DB15 2P`) is controller 2: the second p
 
 ## N64 controllers
 
-Up to four N64 controllers on the SNAC port play as the N64's own four, through `rtl/analogizer/an_joybus.sv`: the menu's "Analogizer controller"
-= "N64 pads (1-4)". The adapter is the N64 SNAC board (a 1 kohm pull-up to 3.3 V on each data line, an LDO for the pads) with its cable harness, on the
-adapter's configuration A:
+Up to three N64 controllers on the SNAC port play as the N64's own first three, through `rtl/analogizer/an_joybus.sv`: the menu's "Analogizer controller"
+= "N64 pads (1-4)" (the menu's text keeps its 1-4; the fourth port is not used). The adapter is the N64 SNAC board (a 1 kohm pull-up to 3.3 V on each data
+line, an LDO for the pads) with its cable harness, on the adapter's configuration A:
 
 | port | data line | cartridge port pin | direction |
 |---|---|---|---|
 | 1 | GND_D (IO5) | `cart_tran_pin30` | its own |
 | 2 | TX- (IO6) | `cart_tran_pin31` | its own |
-| 3 | RX- (IO3) | `cart_tran_bank0[4]` | bank 0's, one for the four bits |
-| 4 | RX+ (IN4) | `cart_tran_bank0[7]` | bank 0's |
+| 3 | RX- (IO3) | `cart_tran_bank0[4]` | bank 0's, one for its bits |
 
-The Joybus has one wire a pad and nobody drives a 1: the FPGA pulls the line low (the pin an output with the value 0) or lets it go (an input) and the
-pull-up makes the 1. The pads are polled one at a time, a slot of 250 us each (a round of four is 1 ms, so a pad is read every millisecond): the command
-`0x01` (the buttons) in 4 us cells and a stop bit goes to the polled port's line only, and only its receiver listens (about 175 us a poll; 140 for a
-port with no pad). Bank 0 has one direction for its two data bits, so while port 3 or 4 is polled the bank is an output, the polled bit low and the
-other high (the level its pull-up gives); the other lines are always let go. A pad is there after one good reply and until 32 polls in a row
-have none, so a poll lost to noise is not a controller taken out. The pins'
-levels while a poll is not going on are the pull-ups' (all lines let go); bank 1's bits 7:6 (OUT2, OUT1) and the pins the harness does not take are not used.
+The Joybus has one wire a pad and nobody drives a 1: the FPGA pulls the line low (the pin an output with the value 0, **and the FPGA's pin let go
+(`z`) when the direction is the pad's**: the pin's value and the transceiver's direction are two signals) or lets it go (an input) and the pull-up makes the 1.
 
-The pad's buttons are the N64's own, so they do not go through the Pocket's keys: while a pad is there, its port's `KEY` word (`CONT1_KEY` ... `CONT4_KEY`)
+**The engine** is the one thing on the wire, a transaction at a time, on one line: the PIF's way, `tx` bytes out and `rx` in. A bit is a 4 us cell (a 1 is
+1 us low and 3 us high, a 0 is 3 us low and 1 us high), the bytes go high bit first, a stop bit (1 us low) ends the command, the line is let go and the
+device answers in the same cells; a reply bit is read 2 us after its falling edge. The result is 0 (all the bytes came), 1 (nothing came) or 2 (some came).
+Bank 0 has one direction for its bits, so while port 3 is polled the bank is an output, its bit low and the others high (the level the pull-up gives); the
+other lines are always let go.
+It has two users:
+
+* **The polling.** The engine asks each port in turn for the buttons (the command `0x01`, 4 bytes back), a slot of 250 us a port (a round of three is
+  750 us: a pad is read about every millisecond); about 175 us a poll, 140 for a port with no pad. A pad is there after one good reply and until 32 polls in a
+  row have none, so a poll lost to noise is not a controller taken out. The buttons and the stick come to the game as words, below.
+* **The runtime's PIF** (`pif_run`, `lang/n64rt/n64rt_io.c`), for a game that runs its own libultra, and the runtime's own `osContInit`, `osPfs*`: the
+  commands the buttons' word cannot answer -- the status (`0x00`, `0xFF`: the pad's type and whether it has an accessory), the accessory's blocks
+  (`0x02`, `0x03`: a Controller Pak, a Rumble Pak, a Transfer Pak) -- go to the pad itself through the `JOYBUS` registers ([control.md](control.md)), as the
+  PIF's block has them. What comes back is the pad's, a real accessory's too. A reply that falls short, or does not come, is the PIF's "no response"
+  (`0x80`). The emulated Controller Pak (the SD card's) is for the Pocket's controllers: a pad on the wire has its own.
+
+The pad's buttons are the N64's own, so they do not go through the Pocket's keys: while a pad is there, its port's `KEY` word (`CONT1_KEY` ... `CONT3_KEY`)
 is `KEY_TYPE` 4 with the 16 buttons in the CONT_ layout in bits 15:0 (A at bit 15 ... C-right at bit 0; the pad's reset flag is cleared) and its `JOY` word
 the stick's two signed bytes (X in 7:0, Y in 15:8). The runtime takes a type 4 pad as it is (`n64rt_pad_map` in `lang/n64rt/n64rt_pad.h`): the Stick,
 C buttons, Z and the other settings of the Pocket's keys do not touch it. A port with no pad is what it was (the Pocket's own controls for port 1, the dock's pad
-for 2 to 4, nothing otherwise), so a controller 2 to 4 is there when its pad answers; while a pad 1 answers, the Pocket's own buttons do not play.
+for 2 and 3, nothing otherwise), so a controller 2 or 3 is there when its pad answers; while a pad 1 answers, the Pocket's own buttons do not play.
 
-What the Joybus does not do here: the Controller Pak, the Rumble Pak and the Transfer Pak of a pad (the pak commands are not sent; the pad's accessory is not
-seen), and the VRU. The N64 SNAC board's LDO has to feed four pads (and a rumble motor draws more than a pad); its datasheet's output current is the limit.
+What it does not do: the VRU and the other devices (the commands are sent as they come, but nothing is made of a device other than a controller), a
+fourth pad (bank 0 bit 7 is not used), and the games' timing of a command: the time the PIF takes is the runtime's measured one (`PIF_TCMD`), not the
+wire's. The N64 SNAC board's LDO has to feed three pads (and a rumble motor draws more than a pad); its datasheet's output current is the limit.
 
-The bench (`sim/analogizer/an_joybus`) has four models of the pad on four wires with pull-ups: every button and stick, a pad taken out and put back, other
-speeds and reply delays, a line stuck low, the command's pulses and cells and the poll's period; `native_map.c` checks the runtime's type 4 on the host.
+The bench (`sim/analogizer/an_joybus`) has three models of the pad on three wires with pull-ups (and a fourth, on the port that is not used, that must not
+be heard): every button and stick, a pad taken out and put back, other speeds and reply delays, a line stuck low, the command's pulses and cells, the slot and
+the ports in turn; and the runtime's side through the registers: the status, a block of an accessory written and read back, a pad that is not there, a
+reply that falls short, the 4th port, a request in the middle of a poll, a second go while busy, and the time a block takes. `native_map.c` checks the
+runtime's type 4 and the accessory's address word on the host.
 
 ## Settings
 

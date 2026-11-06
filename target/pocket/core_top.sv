@@ -261,6 +261,9 @@ module core_top (
   wire  [3:0] jb_drive;               // (a bit a port: that line is pulled low; the pads are polled one at a time)
   wire  [3:0] n64_present;
   wire [63:0] n64_btn, n64_stick;
+  wire        jb_wr, jb_rd;               // the Joybus engine's registers, the SoC's (rtl/soc/mirlo_regs.sv JOYBUS)
+  wire  [1:0] jb_wa, jb_ra;
+  wire [31:0] jb_wd, jb_rdata;
   wire        jb_en = an_own && an_n64;
   wire [2:0]  an_mode;
   wire [1:0]  an_scan;
@@ -286,10 +289,10 @@ module core_top (
                                           : gb_d_oe ? gb_d_o : 8'hzz;
   assign cart_tran_bank1_dir     = an_own ? bank1_out : gb_d_dir;
   // bank 0: the cartridge's PHI, /WR, /RD and /CS (idle high: the Analogizer's SNAC port at rest), or the SNAC pad's data, inputs
-  // (bank 0's direction is one for its bits: while port 3 or 4 is polled the bank is an output, the polled bit low and the others high, the
+  // (bank 0's direction is one for its bits: while port 3 is polled the bank is an output, its bit low and the others high, the
   // level the pull-ups give, so a pad's line is never driven but for its own poll)
-  wire        jb_b0 = jb_drive[2] | jb_drive[3];
-  assign cart_tran_bank0         = jb_en ? (jb_b0 ? {~jb_drive[3], 2'b11, ~jb_drive[2]} : 4'bzzzz) : snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
+  wire        jb_b0 = jb_drive[2];                    // (port 4, bank 0 bit 7, is not used)
+  assign cart_tran_bank0         = jb_en ? (jb_b0 ? {3'b111, ~jb_drive[2]} : 4'bzzzz) : snac_drive ? 4'bzzzz : {gb_phi, gb_wr_n, gb_rd_n, gb_cs_n};
   assign cart_tran_bank0_dir     = jb_en ? jb_b0 : !snac_drive;
   // pin 30: the SNAC pad's second clock (a copy of the first), else as the template leaves it
   assign cart_tran_pin30         = jb_en ? (jb_drive[0] ? 1'b0 : 1'bz) : snac_drive ? snac_clk : 1'b0;   // (the Joybus: low, or let go -- the FPGA's pin too, or it fights the pad's reply)
@@ -1095,6 +1098,7 @@ module core_top (
       .vga_woven(an_vid_woven_s),
       .an_mode(an_mode), .an_scan(an_scan), .an_own(an_own), .snac_kind(snac_kind), .snac_key1(snac_key1), .snac_key2(snac_key2),
       .an_n64(an_n64), .n64_present(n64_present), .n64_btn(n64_btn), .n64_stick(n64_stick),
+      .jb_wr(jb_wr), .jb_rd(jb_rd), .jb_wa(jb_wa), .jb_ra(jb_ra), .jb_wd(jb_wd), .jb_rdata(jb_rdata),
 
       .use_jtag(use_jtag_s),
 
@@ -1290,10 +1294,12 @@ module core_top (
       .clk_o(snac_clk), .lat_o(snac_lat), .drive(snac_drive), .key1(snac_key1), .key2(snac_key2)
   );
 
-  // The N64 pads (up to four, one wire each): their buttons and sticks go to the SoC, which gives them to the game as the controllers'
+  // The N64 pads (up to three, one wire each): their buttons and sticks go to the SoC, which gives them to the game as the controllers',
+  // and the engine is the runtime's PIF on the wire (its registers: JOYBUS)
   an_joybus #(.CLK_HZ(62_500_000)) joybus (
-      .clk(clk_sys), .en(jb_en), .si({cart_tran_bank0[7], cart_tran_bank0[4], cart_tran_pin31, cart_tran_pin30}),
-      .drive(jb_drive), .present(n64_present), .btn(n64_btn), .stick(n64_stick)
+      .clk(clk_sys), .en(jb_en), .si({1'b0, cart_tran_bank0[4], cart_tran_pin31, cart_tran_pin30}),
+      .drive(jb_drive), .present(n64_present), .btn(n64_btn), .stick(n64_stick),
+      .cs_wr(jb_wr), .cs_wa(jb_wa), .cs_wd(jb_wd), .cs_rd(jb_rd), .cs_ra(jb_ra), .cs_rdata(jb_rdata)
   );
 
 endmodule

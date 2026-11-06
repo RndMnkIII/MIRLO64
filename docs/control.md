@@ -23,6 +23,7 @@ runtime (`n64rt.sys`) is what uses the registers here.
 | `UART` | `0xF000_0900` | The JTAG UART |
 | `VIDEO_FRAMEBUFFER` | `0xF000_0A00` | The scan-out: its base, its enables, the picture's pitch, window and scales |
 | `GB_CART` | `0xF000_0C00` | A Game Boy cartridge in the Pocket's slot |
+| `JOYBUS` | `0xF000_0E00` | The Joybus engine of the Analogizer's SNAC port: the PIF's commands for an N64 pad on the wire |
 | `MONITOR` | `0xF000_0D00` | The monitor level's events, and the MI, PI, VI, AI and SI blocks' controls |
 
 An address that no register has reads 0. A 64-bit register is two words, the high one first.
@@ -230,6 +231,20 @@ Pak uses.
 | `ID` | `0x00` | R | `0x4742_0001` |
 | `CTRL` | `0x04` | RW | Bit 0 `ON`: the cartridge out of reset, the bus driven. Bit 1 `TRUST`: chip select and writes allowed (it is a Game Boy's cartridge) |
 | `ACCESS` | `0x08` | RW | Write: an access starts (not while `BUSY`): `DATA` bits 7:0, `ADDR` bits 23:8, `WE` bit 24. Read: `BUSY` bit 31 and the byte read in `DATA` |
+
+## JOYBUS
+
+The engine of `rtl/analogizer/an_joybus.sv` (N64 pads on the SNAC port, [analogizer.md](analogizer.md), "N64 controllers"), as the runtime's PIF
+uses it for a pad of `KEY_TYPE` 4. A transaction is what the PIF does for a channel of its block: `tx` bytes out (the first the command), then `rx` in.
+The 64-byte buffer is the PIF's block as it is: the command's bytes go in at 0 and the reply comes back over them. The engine goes on polling the
+buttons between transactions (they are the `APF_INPUT` words); a transaction waits for the poll that is on and the polling for it.
+
+| Register | Offset | Dir | What |
+|---|---|---|---|
+| `CTL` | `0x00` | RW | Bits 5:0 `TX` bytes to send, 11:6 `RX` bytes to receive, 13:12 `PORT` (0 to 2: ports 1 to 3; 3 is no port), bit 16 `GO` (taken when not `BUSY`) |
+| `ADDR` | `0x04` | RW | The buffer's pointer (6 bits) |
+| `DATA` | `0x08` | RW | The buffer's byte at the pointer, which steps after each read or write |
+| `STATUS` | `0x0C` | R | Bit 0 `BUSY`, bit 1 `DONE` (since the last go), bits 3:2 `RESULT` (0 all the bytes came, 1 nothing came, 2 some came), bits 9:4 `GOT` the bytes that came, bits 18:16 `PRESENT` the pads the polling finds |
 
 ## MONITOR
 

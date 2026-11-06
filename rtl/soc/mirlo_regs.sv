@@ -73,6 +73,11 @@ module mirlo_regs (
     input  wire  [15:0] snac_key1, snac_key2,   // the SNAC pad's keys (rtl/analogizer/an_snac.sv), in the Pocket's key bits: ORed into CONT1_KEY and CONT2_KEY
     input  wire   [3:0] n64_present,            // the N64 pads there are (rtl/analogizer/an_joybus.sv), their buttons (the N64's own bits) and sticks ({Y, X}), 16 bits a port
     input  wire  [63:0] n64_btn, n64_stick,
+    // JOYBUS: the engine's registers (rtl/analogizer/an_joybus.sv): a write (register in jb_wa), a read of DATA (steps its pointer), the register read
+    output wire         jb_wr, jb_rd,
+    output wire  [1:0]  jb_wa, jb_ra,
+    output wire  [31:0] jb_wd,
+    input  wire  [31:0] jb_rdata,
     output wire  [4:0]  ia_crop_v,          // interact: "Crop Vertical" (lines; field 3) and "Crop Right" (pixels; field 5)
     output wire  [1:0]  ia_crop_r,          // ("Crop Horizontal", field 5: [1:0] columns at the right, [3:2] at the left)
     output wire  [1:0]  ia_crop_l,
@@ -393,6 +398,14 @@ assign ai_step_we = wr && a == R_MONITOR_AIRATE;     // (MIRLO_AI: the runtime's
 assign ai_step_wd = r_wdata[19:0];
 assign si_done = wr && a == R_MONITOR_SIDONE;       // (MIRLO_SI: the runtime has run the PIF's commands, rcp_si.sv)
 
+// ---- JOYBUS: the engine holds the registers; the words here are its strobes and addresses (a[5:2] of the block at 0x0E00)
+wire jb_blk = a[15:12] == 4'd0 && a[11:8] == 4'hE && a[7:6] == 2'd0;
+assign jb_wr = wr && jb_blk && a[5:4] == 2'd0;
+assign jb_rd = rd && jb_blk && a[5:2] == R_JOYBUS_DATA[5:2];
+assign jb_wa = a[3:2];
+assign jb_ra = a[3:2];
+assign jb_wd = r_wdata;
+
 // ---- GB_CART
 always_ff @(posedge clk) begin
     gbc_start <= wr && a == R_GB_CART_ACCESS;
@@ -557,6 +570,7 @@ always_comb begin
     R_GB_CART_ACCESS[5:2]:                 rb[12] = {gbc_busy || gbc_start, 23'd0, gbc_rdata};
     default: ;
     endcase
+    if (a[5:4] == 2'd0) rb[14] = jb_rdata;                      // JOYBUS
     case (a[5:2])                                               // MONITOR
     R_MONITOR_ID[5:2]:                     rb[13] = 32'h4D4F_0000 | 32'(MON_PRESENT) | 32'(MI_PRESENT) << 1 | 32'(PI_PRESENT) << 2 | 32'(VI_PRESENT) << 3 | 32'(AI_PRESENT) << 4 | 32'(SI_PRESENT) << 5 | 32'(PI2_PRESENT) << 6 | 32'(ROM64_PRESENT) << 7 | 32'(ps_ready) << 8;
     R_MONITOR_AIRATE[5:2]:                 rb[13] = {18'd0, ai_dac};

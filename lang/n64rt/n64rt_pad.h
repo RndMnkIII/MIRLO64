@@ -239,4 +239,14 @@ static inline void n64rt_pad_map(uint32_t k, uint32_t j, uint32_t set0, uint32_t
     *stick_x = sx;
     *stick_y = sy;
 }
+/* The accessory's address word on the joybus (Controller Pak, Rumble Pak ...): a block's 11 address bits, then a 5-bit checksum of them (the
+ * polynomial x^5 + x^4 + x^2 + 1: below, the checksum of each address bit alone). blk is the address >> 5. Host test: sim/analogizer/an_joybus/native_map.c */
+static inline uint32_t n64rt_pak_addr_word(uint32_t blk)
+{
+    static const uint8_t x[16] = {0, 0, 0, 0, 0, 0x15, 0x1F, 0x0B, 0x16, 0x19, 0x07, 0x0E, 0x1C, 0x0D, 0x1A, 0x01};
+    const uint32_t a = (blk << 5) & 0xFFE0u;
+    uint32_t c = 0;
+    for (int i = 15; i >= 5; i--) if (a & (1u << i)) c ^= x[i];
+    return a | (c & 0x1Fu);
+}
 #endif

@@ -161,6 +161,17 @@ BLOCKS = [
         # Bit 0: domain 2 is a FlashRAM -- the game's reads of it are the status word (SDRAM 0x0334_0100), its writes go nowhere
         ("PI2",     0x3C, RW, 1, [])
     ]),
+    # the Joybus engine on the Analogizer's SNAC port (rtl/analogizer/an_joybus.sv; the N64 pads): the PIF's commands for a pad that is
+    # there, as the wire carries them. A 64-byte buffer (the PIF's block as it is: the command's bytes at 0, the reply over them)
+    ("JOYBUS", 0x0E00, [
+        # write: [5:0] bytes to send (the command's), [11:6] bytes to receive, [13:12] the port (0..2), [16] go (not while BUSY)
+        ("CTL",    0x00, RW, 1, [("TX", 0, 6), ("RX", 6, 6), ("PORT", 12, 2), ("GO", 16, 1)]),
+        ("ADDR",   0x04, RW, 1, []),                # the buffer's pointer
+        ("DATA",   0x08, RW, 1, []),                # a byte of the buffer at the pointer, which steps after each read or write
+        # [0] BUSY, [1] DONE (since the last go), [3:2] RESULT: 0 the bytes came, 1 nothing came, 2 some came; [9:4] GOT the bytes
+        # that came; [18:16] PRESENT the pads the polling finds (port 1 at bit 16), whose buttons are in APF_INPUT
+        ("STATUS", 0x0C, R,  1, [("BUSY", 0, 1), ("DONE", 1, 1), ("RESULT", 2, 2), ("GOT", 4, 6), ("PRESENT", 16, 3)]),
+    ]),
     # a Game Boy cartridge in the Pocket's slot (rtl/soc/gb_cart.sv)
     ("GB_CART", 0x0C00, [
         ("ID",     0x00, R,  1, []),                # 0x47420001 when the port is there

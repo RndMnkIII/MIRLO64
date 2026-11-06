@@ -589,6 +589,57 @@ static int pad_there(int i)
     u32 k = i == 1 ? apf_input_cont2_key_read() : i == 2 ? apf_input_cont3_key_read() : apf_input_cont4_key_read();
     return KEY_TYPE(k) != 0u;
 }
+/* ---- the Joybus engine (rtl/analogizer/an_joybus.sv; the JOYBUS registers) ------------------------------------------------------
+ * A pad of KEY_TYPE 4 -- the N64 pads of the Analogizer's SNAC port, ports 1-3 -- is a device on a wire. The hardware polls its buttons and
+ * they come as words (read_pad); what the buttons' word cannot answer -- the status, the accessory's blocks -- is asked of the pad itself,
+ * a transaction at a time: tx bytes out, rx in, the PIF's way. */
+static int pad_wire(int i)
+{
+    u32 k;
+    switch (i) {
+    case 0:  k = apf_input_cont1_key_read(); break;
+    case 1:  k = apf_input_cont2_key_read(); break;
+    case 2:  k = apf_input_cont3_key_read(); break;
+    default: return 0;
+    }
+    return KEY_TYPE(k) == 4u;
+}
+/* tx bytes to the pad of channel ch, rxn asked: the bytes that came are in rx; returns how many (rxn: all of them; fewer: it fell short;
+ * -1: nothing came -- no device, or the engine is off) */
+static int wire_xfer(int ch, const u8 *tx, u32 txn, u8 *rx, u32 rxn)
+{
+    joybus_addr_write(0);
+    for (u32 i = 0; i < txn; i++) joybus_data_write(tx[i]);
+    joybus_ctl_write(txn | rxn << 6 | (u32)ch << 12 | 1u << 16);
+    u32 st, guard = 400000u;
+    do st = joybus_status_read(); while (joybus_status_busy_extract(st) && --guard);
+    if (!guard || !joybus_status_done_extract(st) || joybus_status_result_extract(st) == 1u) return -1;
+    u32 n = joybus_status_got_extract(st);
+    if (n > rxn) n = rxn;
+    joybus_addr_write(0);
+    for (u32 i = 0; i < n; i++) rx[i] = (u8)joybus_data_read();
+    return (int)n;
+}
+/* an accessory in a pad on the wire: the status's bit 0 (CONT_CARD_ON) */
+__attribute__((unused)) static int wire_pak_on(int ch)
+{
+    u8 c = 0x00u, r[3];
+    return wire_xfer(ch, &c, 1, r, 3) == 3 && (r[2] & 1u);
+}
+/* a block of it: 0 done, 1 no accessory (nothing came), 4 the checksum failed (PFS_ERR_CONTRFAIL) */
+__attribute__((unused)) static s32 wire_pak_rw(int ch, u32 blk, u8 *buf, int write)
+{
+    u8 tx[35], rx[33];
+    const u32 w = n64rt_pak_addr_word(blk);
+    tx[0] = write ? 0x03u : 0x02u; tx[1] = (u8)(w >> 8); tx[2] = (u8)w;
+    if (write) for (int i = 0; i < 32; i++) tx[3 + i] = buf[i];
+    const int want = write ? 1 : 33;
+    if (wire_xfer(ch, tx, write ? 35u : 3u, rx, (u32)want) != want) return 1;
+    if (write) return rx[0] == n64rt_pak_crc(buf) ? 0 : 4;
+    if (rx[32] != n64rt_pak_crc(rx)) return 4;
+    for (int i = 0; i < 32; i++) buf[i] = rx[i];
+    return 0;
+}
 static u8 s_si_irq;                     /* the SI's interrupt, for a game that set it no message (below) */
 #ifdef N64RT_OWN
 static void mi_si_sync(int on);         /* (the MI in hardware keeps a copy of it) */
@@ -613,6 +664,10 @@ static void cont_status(OSContStatus *st)
         st[i].type = on ? 0x0005u : 0;               /* CONT_TYPE_NORMAL */
         st[i].status = on && n64rt_pak_kind(i) != N64RT_PAK_NONE ? 1 : 0;   /* CONT_CARD_ON */
         st[i].errnum = on ? 0 : 8;                   /* CONT_NO_RESPONSE_ERROR */
+        if (on && pad_wire(i)) {                     /* a pad on the wire says what it is, and whether it has an accessory */
+            u8 c = 0x00u, r[3];
+            if (wire_xfer(i, &c, 1, r, 3) == 3) { st[i].type = (u16)(r[1] << 8 | r[0]); st[i].status = r[2]; }
+        }
     }
 }
 s32 n64rt_osContInit(OSMesgQueue *mq, u8 *bits, OSContStatus *st)
@@ -638,7 +693,7 @@ void n64rt_osContGetReadData(OSContPad *p)
 s32 n64rt___osContRamRead(OSMesgQueue *mq, int ch, u16 addr, u8 *buf)
 {
     (void)mq;
-    s32 r = n64rt_pak_rw(ch, (u32)addr << 5, buf, 0);
+    s32 r = pad_wire(ch) ? wire_pak_rw(ch, addr, buf, 0) : n64rt_pak_rw(ch, (u32)addr << 5, buf, 0);
 #ifdef N64RT_DEBUG
     { static u32 s_n; if (s_n++ < 40u) n64rt_log("n64rt: pak read  %04lx: %02x %02x %02x %02x ... (%ld)\n", (unsigned long)addr << 5, buf[0], buf[1], buf[2], buf[3], (long)r); }
 #endif
@@ -648,20 +703,20 @@ s32 n64rt___osContRamWrite(OSMesgQueue *mq, int ch, u16 addr, u8 *buf, int force
 {
     (void)mq;
     if (force != 1 && addr < 7u && addr != 0u) return 0;
-    s32 r = n64rt_pak_rw(ch, (u32)addr << 5, buf, 1);
+    s32 r = pad_wire(ch) ? wire_pak_rw(ch, addr, buf, 1) : n64rt_pak_rw(ch, (u32)addr << 5, buf, 1);
 #ifdef N64RT_DEBUG
     { static u32 s_n; if (s_n++ < 40u) n64rt_log("n64rt: pak write %04lx: %02x %02x %02x %02x ... (%ld)\n", (unsigned long)addr << 5, buf[0], buf[1], buf[2], buf[3], (long)r); }
 #endif
     return r;
 }
-s32 n64rt___osPfsGetStatus(OSMesgQueue *mq, int ch) { (void)mq; return n64rt_pak_kind(ch) != N64RT_PAK_NONE ? 0 : 1; }
+s32 n64rt___osPfsGetStatus(OSMesgQueue *mq, int ch) { (void)mq; return (pad_wire(ch) ? wire_pak_on(ch) : n64rt_pak_kind(ch) != N64RT_PAK_NONE) ? 0 : 1; }
 /* (the game's own goes by its libultra's count of controllers, which the
  * game's osContInit would have set: this one is the runtime's) */
 s32 n64rt_osPfsIsPlug(OSMesgQueue *mq, u8 *pattern)
 {
     (void)mq;
     u8 bits = 0;
-    for (int i = 0; i < 4; i++) if (pad_there(i) && n64rt_pak_kind(i) != N64RT_PAK_NONE) bits |= (u8)(1u << i);
+    for (int i = 0; i < 4; i++) if (pad_there(i) && (pad_wire(i) ? wire_pak_on(i) : n64rt_pak_kind(i) != N64RT_PAK_NONE)) bits |= (u8)(1u << i);
     *pattern = bits;
     return 0;
 }
@@ -768,7 +823,9 @@ static u32 pif_run(void)
         u8 *cmd = &s_pif[i + 2], *rep = cmd + tx;
         if (i + 2 + tx + rx > 63) break;
         int ok = 0;
-        if (ch < 4 && pad_there(ch)) {
+        if (ch < 3 && pad_wire(ch) && cmd[0] != 0x01u) {      /* a pad on the wire: what the buttons' word cannot answer is asked of the pad */
+            ok = wire_xfer(ch, cmd, tx, rep, rx) == (int)rx;   /* (a reply that falls short is the timeout too) */
+        } else if (ch < 4 && pad_there(ch)) {
             const int pak = n64rt_pak_kind(ch) != N64RT_PAK_NONE;
             if ((cmd[0] == 0x00u || cmd[0] == 0xFFu) && rx >= 3) { rep[0] = 0x05; rep[1] = 0x00; rep[2] = pak ? 0x01 : 0x02; ok = 1; }   /* a pad, its pak */
             else if (cmd[0] == 0x02u && tx >= 3 && rx >= 33 && pak) {  /* (no pak: not answered, as it never was) */

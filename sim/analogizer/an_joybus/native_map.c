@@ -27,6 +27,16 @@ int main(void)
     CHECK(b == CONT_A && x == 0 && y == 0, "type 1 A: %04x %d %d", b, x, y);
     n64rt_pad_map((1u << 28) | KEY_DPAD_UP, 0, 0, 0, &b, &x, &y);
     CHECK(b == 0 && x == 0 && y == 80, "type 1 up: %04x %d %d", b, x, y);
+    /* the accessory's address word: every block against the checksum computed bit by bit by the polynomial (a division), and the two words every
+     * accessory driver knows: 0x8000 (the Rumble Pak's probe and motor) is sent as 0x8001, 0xC000 as 0xC01B */
+    for (uint32_t blk = 0; blk < 0x800u; blk++) {
+        uint32_t r = blk << 5;                       /* the 16-bit word, its low 5 bits the remainder's place */
+        for (int i = 15; i >= 5; i--) if (r & (1u << i)) { r ^= 0x35u << (i - 5); }
+        CHECK(n64rt_pak_addr_word(blk) == ((blk << 5) | (r & 0x1Fu)), "address word of block %x: %04x", blk, n64rt_pak_addr_word(blk));
+    }
+    CHECK(n64rt_pak_addr_word(0x8000u >> 5) == 0x8001u, "0x8000 -> %04x", n64rt_pak_addr_word(0x8000u >> 5));
+    CHECK(n64rt_pak_addr_word(0xC000u >> 5) == 0xC01Bu, "0xC000 -> %04x", n64rt_pak_addr_word(0xC000u >> 5));
+    CHECK(n64rt_pak_addr_word(0) == 0u, "0 -> %04x", n64rt_pak_addr_word(0));
     printf(fails ? "SOME FAILED\n" : "ALL PASS\n");
     return fails != 0;
 }
